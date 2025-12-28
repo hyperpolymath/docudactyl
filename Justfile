@@ -12,10 +12,15 @@ set shell := ["bash", "-uc"]
 set dotenv-load := true
 set positional-arguments := true
 
-# Project metadata - CUSTOMIZE THESE
-project := "RSR-template-repo"
+# Project metadata
+project := "docudactyl"
 version := "0.1.0"
-tier := "infrastructure"  # 1 | 2 | infrastructure
+tier := "1"  # Tier 1: Julia + OCaml + Ada
+
+# Component paths
+julia_src := "src/julia"
+ocaml_src := "src/ocaml"
+ada_src := "src/ada"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DEFAULT & HELP
@@ -50,58 +55,70 @@ info:
 # BUILD & COMPILE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Build the project (debug mode)
-build *args:
-    @echo "Building {{project}}..."
-    # TODO: Add build command for your language
-    # Rust: cargo build {{args}}
-    # ReScript: npm run build
-    # Elixir: mix compile
+# Build all components
+build: build-julia build-ocaml build-ada
+    @echo "All components built!"
+
+# Build Julia package
+build-julia:
+    @echo "Building Julia package..."
+    cd {{julia_src}} && julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+
+# Build OCaml transformer
+build-ocaml:
+    @echo "Building OCaml transformer..."
+    cd {{ocaml_src}} && dune build
+
+# Build Ada TUI
+build-ada:
+    @echo "Building Ada TUI..."
+    cd {{ada_src}} && mkdir -p obj bin && gprbuild -P docudactyl.gpr
 
 # Build in release mode with optimizations
-build-release *args:
+build-release: build-julia
     @echo "Building {{project}} (release)..."
-    # TODO: Add release build command
-    # Rust: cargo build --release {{args}}
-
-# Build and watch for changes
-build-watch:
-    @echo "Watching for changes..."
-    # TODO: Add watch command
-    # Rust: cargo watch -x build
-    # ReScript: npm run watch
+    cd {{ocaml_src}} && dune build --release
+    cd {{ada_src}} && gprbuild -P docudactyl.gpr -XBUILD=release
 
 # Clean build artifacts [reversible: rebuild with `just build`]
 clean:
     @echo "Cleaning..."
-    rm -rf target _build dist lib node_modules
+    rm -rf {{ocaml_src}}/_build
+    rm -rf {{ada_src}}/obj {{ada_src}}/bin
+    rm -rf target _build dist
 
 # Deep clean including caches [reversible: rebuild]
 clean-all: clean
     rm -rf .cache .tmp
+    cd {{julia_src}} && rm -rf Manifest.toml
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TEST & QUALITY
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Run all tests
-test *args:
-    @echo "Running tests..."
-    # TODO: Add test command
-    # Rust: cargo test {{args}}
-    # ReScript: npm test
-    # Elixir: mix test
+test: test-julia test-ocaml
+    @echo "All tests passed!"
+
+# Run Julia tests
+test-julia:
+    @echo "Running Julia tests..."
+    cd {{julia_src}} && julia --project=. -e 'using Pkg; Pkg.test()'
+
+# Run OCaml tests
+test-ocaml:
+    @echo "Running OCaml tests..."
+    cd {{ocaml_src}} && dune runtest
 
 # Run tests with verbose output
 test-verbose:
     @echo "Running tests (verbose)..."
-    # TODO: Add verbose test
+    cd {{julia_src}} && julia --project=. -e 'using Pkg; Pkg.test(; verbose=true)'
 
 # Run tests and generate coverage report
 test-coverage:
     @echo "Running tests with coverage..."
-    # TODO: Add coverage command
-    # Rust: cargo llvm-cov
+    cd {{julia_src}} && julia --project=. -e 'using Pkg; Pkg.test(; coverage=true)'
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # LINT & FORMAT
@@ -139,41 +156,63 @@ fix: fmt
 # RUN & EXECUTE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Run the application
-run *args:
-    @echo "Running {{project}}..."
-    # TODO: Add run command
-    # Rust: cargo run {{args}}
+# Run Julia CLI for PDF extraction
+extract pdf *args:
+    @echo "Extracting text from {{pdf}}..."
+    cd {{julia_src}} && julia --project=. cli.jl "{{pdf}}" {{args}}
 
-# Run in development mode with hot reload
-dev:
-    @echo "Starting dev mode..."
-    # TODO: Add dev command
+# Run OCaml transformer to convert to Scheme
+transform input output="":
+    @echo "Transforming to Scheme..."
+    cd {{ocaml_src}} && dune exec docudactyl-scm -- "{{input}}" -o "{{output}}"
 
-# Run REPL/interactive mode
+# Run Ada TUI
+tui *args:
+    @echo "Starting TUI..."
+    {{ada_src}}/bin/docudactyl-tui {{args}}
+
+# Full pipeline: extract + transform
+pipeline pdf:
+    #!/usr/bin/env bash
+    echo "Running full pipeline on {{pdf}}..."
+    BASE=$(basename "{{pdf}}" .pdf)
+    just extract "{{pdf}}" -o "output/${BASE}.json" -f json
+    just transform "output/${BASE}.json" "output/${BASE}.scm"
+    echo "Pipeline complete: output/${BASE}.scm"
+
+# Run Julia REPL with Docudactyl loaded
 repl:
-    @echo "Starting REPL..."
-    # TODO: Add REPL command
-    # Elixir: iex -S mix
-    # Guile: guix shell guile -- guile
+    @echo "Starting Julia REPL..."
+    cd {{julia_src}} && julia --project=. -e 'using Docudactyl; Docudactyl.info()' -i
+
+# Run with workers for parallel processing
+parallel-extract dir workers="4":
+    @echo "Parallel extraction from {{dir}} with {{workers}} workers..."
+    cd {{julia_src}} && julia --project=. -p {{workers}} -e \
+        'using Docudactyl; results = parallel_extract_dir("{{dir}}"); println("Processed $(length(results)) files")'
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DEPENDENCIES
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Install all dependencies
-deps:
-    @echo "Installing dependencies..."
-    # TODO: Add deps command
-    # Rust: (automatic with cargo)
-    # ReScript: npm install
-    # Elixir: mix deps.get
+deps: deps-julia deps-ocaml
+    @echo "All dependencies installed!"
+
+# Install Julia dependencies
+deps-julia:
+    @echo "Installing Julia dependencies..."
+    cd {{julia_src}} && julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+# Install OCaml dependencies
+deps-ocaml:
+    @echo "Installing OCaml dependencies..."
+    opam install --deps-only {{ocaml_src}}/docudactyl_scm.opam
 
 # Audit dependencies for vulnerabilities
 deps-audit:
     @echo "Auditing dependencies..."
-    # TODO: Add audit command
-    # Rust: cargo audit
+    cd {{julia_src}} && julia --project=. -e 'using Pkg; Pkg.audit()'
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DOCUMENTATION
@@ -421,11 +460,17 @@ log count="20":
 
 # Count lines of code
 loc:
-    @find . \( -name "*.rs" -o -name "*.ex" -o -name "*.res" -o -name "*.ncl" -o -name "*.scm" \) 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 || echo "0"
+    @echo "=== Lines of Code ==="
+    @echo "Julia:"
+    @find {{julia_src}} -name "*.jl" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 || echo "0"
+    @echo "OCaml:"
+    @find {{ocaml_src}} -name "*.ml" -o -name "*.mli" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 || echo "0"
+    @echo "Ada:"
+    @find {{ada_src}} -name "*.ads" -o -name "*.adb" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 || echo "0"
 
 # Show TODO comments
 todos:
-    @grep -rn "TODO\|FIXME" --include="*.rs" --include="*.ex" --include="*.res" . 2>/dev/null || echo "No TODOs"
+    @grep -rn "TODO\|FIXME" --include="*.jl" --include="*.ml" --include="*.ads" --include="*.adb" . 2>/dev/null || echo "No TODOs"
 
 # Open in editor
 edit:
