@@ -1,0 +1,34 @@
+-- SPDX-FileCopyrightText: 2025 Hyperpolymath
+-- SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Palimpsest-0.5
+
+project Docudactyl is
+
+   for Source_Dirs use (".");
+   for Object_Dir use "obj";
+   for Exec_Dir use "bin";
+   for Main use ("docudactyl_tui.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-gnat2022",      -- Ada 2022 standard
+         "-gnatwa",        -- All warnings
+         "-gnatyy",        -- Style checks
+         "-gnata",         -- Assertions enabled
+         "-gnatVa",        -- Validity checks
+         "-gnatf",         -- Full error messages
+         "-O2");           -- Optimization
+   end Compiler;
+
+   package Binder is
+      for Default_Switches ("Ada") use ("-Es");  -- Symbolic traceback
+   end Binder;
+
+   package Linker is
+      for Default_Switches ("Ada") use ("-g");
+   end Linker;
+
+   package Builder is
+      for Executable ("docudactyl_tui.adb") use "docudactyl-tui";
+   end Builder;
+
+end Docudactyl;

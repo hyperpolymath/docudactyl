@@ -1,0 +1,30 @@
+; SPDX-FileCopyrightText: 2025 Hyperpolymath
+; SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Palimpsest-0.5
+
+(lang dune 3.0)
+
+(name docudactyl_scm)
+
+(generate_opam_files true)
+
+(source
+ (github hyperpolymath/docudactyl))
+
+(authors "Hyperpolymath <hyperpolymath@proton.me>")
+
+(maintainers "Hyperpolymath <hyperpolymath@proton.me>")
+
+(license "AGPL-3.0-or-later OR LicenseRef-Palimpsest-0.5")
+
+(documentation https://github.com/hyperpolymath/docudactyl)
+
+(package
+ (name docudactyl_scm)
+ (synopsis "PDF to Scheme transformer for Docudactyl")
+ (description "Transforms PDF documents into machine-readable Scheme (S-expression) format")
+ (depends
+  (ocaml (>= 4.14))
+  dune
+  camlpdf
+  yojson
+  cmdliner))

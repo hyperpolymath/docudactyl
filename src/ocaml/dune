@@ -1,0 +1,8 @@
+; SPDX-FileCopyrightText: 2025 Hyperpolymath
+; SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Palimpsest-0.5
+
+(executable
+ (name docudactyl_scm)
+ (public_name docudactyl-scm)
+ (libraries camlpdf yojson cmdliner)
+ (modules docudactyl_scm pdf_parser scheme_emit document_types))
