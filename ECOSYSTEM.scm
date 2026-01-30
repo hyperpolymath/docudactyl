@@ -1,4 +1,4 @@
-;; SPDX-License-Identifier: AGPL-3.0-or-later
+;; SPDX-License-Identifier: MPL-2.0-or-later
 ;; ECOSYSTEM.scm - Project ecosystem positioning
 
 (ecosystem
@@ -9,6 +9,6 @@
    (position-in-ecosystem . "supporting")
    (related-projects
      ((rhodium-standard . "sibling-standard")
-      (gitvisor . "infrastructure")))
+      (git-hud . "infrastructure")))
    (what-this-is . ("A hyperpolymath project"))
    (what-this-is-not . ("A standalone solution"))))
