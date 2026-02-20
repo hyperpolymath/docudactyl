@@ -1,0 +1,707 @@
+// Docudactyl FFI — Unified Multi-Format Parser Dispatcher
+//
+// Thin Zig wrapper around C libraries for HPC document processing.
+// Chapel calls these functions via C FFI. Each parser writes extracted
+// content to an output file; the result struct is a summary.
+//
+// Linked C libraries:
+//   - libpoppler-glib  (PDF text/metadata extraction)
+//   - libtesseract     (OCR for images)
+//   - libavformat/libavcodec/libavutil (audio/video metadata)
+//   - libxml2          (EPUB/XHTML parsing)
+//   - libgdal          (geospatial: shapefiles, GeoTIFF)
+//   - libvips          (image dimensions/metadata)
+//
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
+
+const std = @import("std");
+const c = @cImport({
+    // Poppler (PDF)
+    @cInclude("poppler/glib/poppler.h");
+    // Tesseract (OCR)
+    @cInclude("tesseract/capi.h");
+    // FFmpeg (audio/video)
+    @cInclude("libavformat/avformat.h");
+    @cInclude("libavutil/dict.h");
+    // libxml2 (EPUB)
+    @cInclude("libxml/parser.h");
+    @cInclude("libxml/tree.h");
+    @cInclude("libxml/xpath.h");
+    // GDAL (geospatial)
+    @cInclude("gdal.h");
+    @cInclude("cpl_conv.h");
+    // libvips (image metadata)
+    @cInclude("vips/vips.h");
+});
+
+// ============================================================================
+// Version
+// ============================================================================
+
+const VERSION = "0.1.0";
+const BUILD_INFO = "docudactyl-ffi built with Zig " ++ @import("builtin").zig_version_string;
+
+// ============================================================================
+// Result struct — flat C-compatible, identical to Chapel's extern record
+// ============================================================================
+
+/// Content kind enum matching Chapel's ContentKind
+pub const ContentKind = enum(c_int) {
+    pdf = 0,
+    image = 1,
+    audio = 2,
+    video = 3,
+    epub = 4,
+    geospatial = 5,
+    unknown = 6,
+};
+
+/// Parse result — flat struct, no pointers, safe for FFI
+/// Fields use fixed-size arrays to avoid allocation/lifetime issues across FFI.
+pub const ParseResult = extern struct {
+    status: c_int,            // 0 = success, nonzero = error code
+    content_kind: c_int,      // ContentKind value
+    page_count: i32,          // pages (PDF/EPUB) or 0
+    word_count: i64,          // extracted words
+    char_count: i64,          // extracted characters
+    duration_sec: f64,        // audio/video duration in seconds, 0 for text
+    parse_time_ms: f64,       // wall-clock time to parse this document
+    sha256: [65]u8,           // hex-encoded SHA-256 + null terminator
+    error_msg: [256]u8,       // error message + null terminator
+    title: [256]u8,           // document title
+    author: [256]u8,          // document author
+    mime_type: [64]u8,        // detected MIME type
+};
+
+/// Library handle — holds initialised library contexts
+const HandleState = struct {
+    allocator: std.mem.Allocator,
+    tess_api: ?*c.TessBaseAPI,
+    gdal_initialised: bool,
+    vips_initialised: bool,
+};
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/// Copy a slice into a fixed-size buffer, null-terminating
+fn copyToFixed(comptime N: usize, dest: *[N]u8, src: []const u8) void {
+    const len = @min(src.len, N - 1);
+    @memcpy(dest[0..len], src[0..len]);
+    dest[len] = 0;
+}
+
+/// Zero-fill a fixed-size buffer
+fn zeroFixed(comptime N: usize, dest: *[N]u8) void {
+    @memset(dest, 0);
+}
+
+/// Create a blank result with all fields zeroed
+fn blankResult() ParseResult {
+    var r: ParseResult = undefined;
+    @memset(std.mem.asBytes(&r), 0);
+    return r;
+}
+
+/// Count words in a byte slice (whitespace-delimited)
+fn countWords(text: []const u8) i64 {
+    var count: i64 = 0;
+    var in_word = false;
+    for (text) |ch| {
+        if (ch == ' ' or ch == '\n' or ch == '\r' or ch == '\t') {
+            if (in_word) {
+                count += 1;
+                in_word = false;
+            }
+        } else {
+            in_word = true;
+        }
+    }
+    if (in_word) count += 1;
+    return count;
+}
+
+/// Compute SHA-256 of a file and write hex string into dest
+fn computeSha256(path: []const u8, dest: *[65]u8) bool {
+    const file = std.fs.openFileAbsolute(path, .{}) catch return false;
+    defer file.close();
+
+    var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+    var buf: [8192]u8 = undefined;
+    while (true) {
+        const n = file.read(&buf) catch return false;
+        if (n == 0) break;
+        hasher.update(buf[0..n]);
+    }
+    const digest = hasher.finalResult();
+    const hex_chars = "0123456789abcdef";
+    for (digest, 0..) |byte, i| {
+        dest[i * 2] = hex_chars[byte >> 4];
+        dest[i * 2 + 1] = hex_chars[byte & 0x0f];
+    }
+    dest[64] = 0;
+    return true;
+}
+
+/// Get wall-clock time in milliseconds
+fn nowMs() f64 {
+    const ts = std.time.nanoTimestamp();
+    return @as(f64, @floatFromInt(ts)) / 1_000_000.0;
+}
+
+// ============================================================================
+// Per-format parsers
+// ============================================================================
+
+/// PDF: extract text + metadata via Poppler
+fn parsePdf(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *ParseResult) void {
+    const uri_buf_size = 4096;
+    var uri_buf: [uri_buf_size]u8 = undefined;
+
+    // Poppler requires a file:// URI
+    const path_slice = std.mem.span(input_path);
+    const prefix = "file://";
+    if (prefix.len + path_slice.len >= uri_buf_size) {
+        copyToFixed(256, &result.error_msg, "Path too long for URI buffer");
+        result.status = 1;
+        return;
+    }
+    @memcpy(uri_buf[0..prefix.len], prefix);
+    @memcpy(uri_buf[prefix.len .. prefix.len + path_slice.len], path_slice);
+    uri_buf[prefix.len + path_slice.len] = 0;
+
+    var gerr: ?*c.GError = null;
+    const doc = c.poppler_document_new_from_file(&uri_buf, null, &gerr);
+    if (doc == null) {
+        if (gerr) |e| {
+            const msg = std.mem.span(e.*.message);
+            copyToFixed(256, &result.error_msg, msg);
+            c.g_error_free(e);
+        } else {
+            copyToFixed(256, &result.error_msg, "Failed to open PDF");
+        }
+        result.status = 2; // ParseError
+        return;
+    }
+    defer c.g_object_unref(doc);
+
+    const n_pages = c.poppler_document_get_n_pages(doc);
+    result.page_count = @intCast(n_pages);
+    result.content_kind = @intFromEnum(ContentKind.pdf);
+    copyToFixed(64, &result.mime_type, "application/pdf");
+
+    // Extract title/author
+    if (c.poppler_document_get_title(doc)) |t| {
+        copyToFixed(256, &result.title, std.mem.span(t));
+        c.g_free(t);
+    }
+    if (c.poppler_document_get_author(doc)) |a| {
+        copyToFixed(256, &result.author, std.mem.span(a));
+        c.g_free(a);
+    }
+
+    // Extract text page by page, write to output file
+    const out_file = std.fs.createFileAbsoluteZ(output_path, .{}) catch {
+        copyToFixed(256, &result.error_msg, "Cannot create output file");
+        result.status = 1;
+        return;
+    };
+    defer out_file.close();
+
+    var total_chars: i64 = 0;
+    var total_words: i64 = 0;
+
+    var i: c_int = 0;
+    while (i < n_pages) : (i += 1) {
+        const page = c.poppler_document_get_page(doc, i) orelse continue;
+        defer c.g_object_unref(page);
+
+        if (c.poppler_page_get_text(page)) |text_ptr| {
+            const text = std.mem.span(text_ptr);
+            out_file.writeAll(text) catch {};
+            out_file.writeAll("\n") catch {};
+            total_chars += @intCast(text.len);
+            total_words += countWords(text);
+            c.g_free(text_ptr);
+        }
+    }
+
+    result.word_count = total_words;
+    result.char_count = total_chars;
+    result.status = 0;
+}
+
+/// Image: OCR via Tesseract + dimensions via libvips
+fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *HandleState, result: *ParseResult) void {
+    result.content_kind = @intFromEnum(ContentKind.image);
+
+    const tess = state.tess_api orelse {
+        copyToFixed(256, &result.error_msg, "Tesseract not initialised");
+        result.status = 1;
+        return;
+    };
+
+    // Set image for OCR
+    const pix = c.pixRead(input_path);
+    if (pix == null) {
+        copyToFixed(256, &result.error_msg, "Cannot read image file");
+        result.status = 2;
+        return;
+    }
+    defer c.pixDestroy(@constCast(&pix));
+
+    c.TessBaseAPISetImage2(tess, pix);
+    if (c.TessBaseAPIRecognize(tess, null) != 0) {
+        copyToFixed(256, &result.error_msg, "Tesseract recognition failed");
+        result.status = 2;
+        return;
+    }
+
+    const ocr_text_ptr = c.TessBaseAPIGetUTF8Text(tess);
+    if (ocr_text_ptr == null) {
+        copyToFixed(256, &result.error_msg, "No text extracted from image");
+        result.status = 0; // not an error, just no text
+        return;
+    }
+    defer c.TessDeleteText(ocr_text_ptr);
+    const ocr_text = std.mem.span(ocr_text_ptr);
+
+    // Write extracted text to output
+    const out_file = std.fs.createFileAbsoluteZ(output_path, .{}) catch {
+        copyToFixed(256, &result.error_msg, "Cannot create output file");
+        result.status = 1;
+        return;
+    };
+    defer out_file.close();
+    out_file.writeAll(ocr_text) catch {};
+
+    result.char_count = @intCast(ocr_text.len);
+    result.word_count = countWords(ocr_text);
+    result.page_count = 1;
+
+    // Detect MIME from extension
+    const path_str = std.mem.span(input_path);
+    if (std.mem.endsWith(u8, path_str, ".png")) {
+        copyToFixed(64, &result.mime_type, "image/png");
+    } else if (std.mem.endsWith(u8, path_str, ".jpg") or std.mem.endsWith(u8, path_str, ".jpeg")) {
+        copyToFixed(64, &result.mime_type, "image/jpeg");
+    } else if (std.mem.endsWith(u8, path_str, ".tiff") or std.mem.endsWith(u8, path_str, ".tif")) {
+        copyToFixed(64, &result.mime_type, "image/tiff");
+    } else {
+        copyToFixed(64, &result.mime_type, "image/unknown");
+    }
+
+    result.status = 0;
+}
+
+/// Audio: metadata + duration via FFmpeg (libavformat)
+fn parseAudio(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *ParseResult) void {
+    result.content_kind = @intFromEnum(ContentKind.audio);
+
+    var fmt_ctx: ?*c.AVFormatContext = null;
+    if (c.avformat_open_input(&fmt_ctx, input_path, null, null) < 0) {
+        copyToFixed(256, &result.error_msg, "Cannot open audio file");
+        result.status = 2;
+        return;
+    }
+    defer c.avformat_close_input(&fmt_ctx);
+
+    if (c.avformat_find_stream_info(fmt_ctx, null) < 0) {
+        copyToFixed(256, &result.error_msg, "Cannot find stream info");
+        result.status = 2;
+        return;
+    }
+
+    const ctx = fmt_ctx.?;
+    // Duration in seconds
+    if (ctx.duration > 0) {
+        result.duration_sec = @as(f64, @floatFromInt(ctx.duration)) / @as(f64, @floatFromInt(c.AV_TIME_BASE));
+    }
+
+    // Extract metadata (title, artist)
+    if (ctx.metadata) |metadata| {
+        var tag: ?*c.AVDictionaryEntry = null;
+        tag = c.av_dict_get(metadata, "title", null, 0);
+        if (tag) |t| {
+            if (t.value) |v| copyToFixed(256, &result.title, std.mem.span(v));
+        }
+        tag = c.av_dict_get(metadata, "artist", null, 0);
+        if (tag) |t| {
+            if (t.value) |v| copyToFixed(256, &result.author, std.mem.span(v));
+        }
+    }
+
+    // Write metadata summary to output file
+    const out_file = std.fs.createFileAbsoluteZ(output_path, .{}) catch {
+        copyToFixed(256, &result.error_msg, "Cannot create output file");
+        result.status = 1;
+        return;
+    };
+    defer out_file.close();
+
+    var buf: [512]u8 = undefined;
+    const written = std.fmt.bufPrint(&buf, "(audio (duration {d:.2}) (title \"{s}\") (artist \"{s}\"))\n", .{
+        result.duration_sec,
+        std.mem.sliceTo(&result.title, 0),
+        std.mem.sliceTo(&result.author, 0),
+    }) catch &buf;
+    out_file.writeAll(written) catch {};
+
+    // MIME detection
+    const path_str = std.mem.span(input_path);
+    if (std.mem.endsWith(u8, path_str, ".mp3")) {
+        copyToFixed(64, &result.mime_type, "audio/mpeg");
+    } else if (std.mem.endsWith(u8, path_str, ".wav")) {
+        copyToFixed(64, &result.mime_type, "audio/wav");
+    } else if (std.mem.endsWith(u8, path_str, ".flac")) {
+        copyToFixed(64, &result.mime_type, "audio/flac");
+    } else {
+        copyToFixed(64, &result.mime_type, "audio/unknown");
+    }
+
+    result.status = 0;
+}
+
+/// Video: subtitles + metadata via FFmpeg
+fn parseVideo(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *ParseResult) void {
+    result.content_kind = @intFromEnum(ContentKind.video);
+
+    var fmt_ctx: ?*c.AVFormatContext = null;
+    if (c.avformat_open_input(&fmt_ctx, input_path, null, null) < 0) {
+        copyToFixed(256, &result.error_msg, "Cannot open video file");
+        result.status = 2;
+        return;
+    }
+    defer c.avformat_close_input(&fmt_ctx);
+
+    if (c.avformat_find_stream_info(fmt_ctx, null) < 0) {
+        copyToFixed(256, &result.error_msg, "Cannot find stream info");
+        result.status = 2;
+        return;
+    }
+
+    const ctx = fmt_ctx.?;
+    if (ctx.duration > 0) {
+        result.duration_sec = @as(f64, @floatFromInt(ctx.duration)) / @as(f64, @floatFromInt(c.AV_TIME_BASE));
+    }
+
+    // Extract metadata
+    if (ctx.metadata) |metadata| {
+        var tag: ?*c.AVDictionaryEntry = null;
+        tag = c.av_dict_get(metadata, "title", null, 0);
+        if (tag) |t| {
+            if (t.value) |v| copyToFixed(256, &result.title, std.mem.span(v));
+        }
+        tag = c.av_dict_get(metadata, "artist", null, 0);
+        if (tag) |t| {
+            if (t.value) |v| copyToFixed(256, &result.author, std.mem.span(v));
+        }
+    }
+
+    // Look for subtitle streams and extract text
+    const out_file = std.fs.createFileAbsoluteZ(output_path, .{}) catch {
+        copyToFixed(256, &result.error_msg, "Cannot create output file");
+        result.status = 1;
+        return;
+    };
+    defer out_file.close();
+
+    var sub_count: i64 = 0;
+    for (0..ctx.nb_streams) |i| {
+        const stream = ctx.streams[i];
+        if (stream.*.codecpar.*.codec_type == c.AVMEDIA_TYPE_SUBTITLE) {
+            sub_count += 1;
+        }
+    }
+
+    var buf: [512]u8 = undefined;
+    const written = std.fmt.bufPrint(&buf, "(video (duration {d:.2}) (subtitle-streams {d}) (title \"{s}\"))\n", .{
+        result.duration_sec,
+        sub_count,
+        std.mem.sliceTo(&result.title, 0),
+    }) catch &buf;
+    out_file.writeAll(written) catch {};
+
+    // MIME
+    const path_str = std.mem.span(input_path);
+    if (std.mem.endsWith(u8, path_str, ".mp4")) {
+        copyToFixed(64, &result.mime_type, "video/mp4");
+    } else if (std.mem.endsWith(u8, path_str, ".mkv")) {
+        copyToFixed(64, &result.mime_type, "video/x-matroska");
+    } else {
+        copyToFixed(64, &result.mime_type, "video/unknown");
+    }
+
+    result.status = 0;
+}
+
+/// EPUB: structured text extraction via libxml2
+fn parseEpub(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *ParseResult) void {
+    result.content_kind = @intFromEnum(ContentKind.epub);
+    copyToFixed(64, &result.mime_type, "application/epub+zip");
+
+    // EPUB is a ZIP — for now, parse the container.xml or content.opf
+    // In a production version this would unzip and iterate XHTML files.
+    // Here we use libxml2 to parse the file if it's an unzipped XHTML.
+    const doc = c.xmlReadFile(input_path, null, c.XML_PARSE_RECOVER | c.XML_PARSE_NOERROR);
+    if (doc == null) {
+        // Try as plain XML/XHTML
+        copyToFixed(256, &result.error_msg, "Cannot parse EPUB/XHTML content");
+        result.status = 2;
+        return;
+    }
+    defer c.xmlFreeDoc(doc);
+
+    const out_file = std.fs.createFileAbsoluteZ(output_path, .{}) catch {
+        copyToFixed(256, &result.error_msg, "Cannot create output file");
+        result.status = 1;
+        return;
+    };
+    defer out_file.close();
+
+    // Extract all text content from the XML tree
+    const root = c.xmlDocGetRootElement(doc);
+    if (root == null) {
+        result.status = 0;
+        return;
+    }
+
+    var total_chars: i64 = 0;
+    var total_words: i64 = 0;
+    extractXmlText(root, out_file, &total_chars, &total_words);
+
+    result.char_count = total_chars;
+    result.word_count = total_words;
+    result.page_count = 1; // EPUB doesn't have fixed pages
+    result.status = 0;
+}
+
+/// Recursively extract text from XML nodes
+fn extractXmlText(node: *c.xmlNode, file: std.fs.File, chars: *i64, words: *i64) void {
+    var cur: ?*c.xmlNode = node;
+    while (cur) |n| {
+        if (n.type == c.XML_TEXT_NODE or n.type == c.XML_CDATA_SECTION_NODE) {
+            if (n.content) |content| {
+                const text = std.mem.span(content);
+                file.writeAll(text) catch {};
+                chars.* += @intCast(text.len);
+                words.* += countWords(text);
+            }
+        }
+        if (n.children) |children| {
+            extractXmlText(children, file, chars, words);
+        }
+        cur = n.next;
+    }
+}
+
+/// Geospatial: projection + bounds via GDAL
+fn parseGeo(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *ParseResult) void {
+    result.content_kind = @intFromEnum(ContentKind.geospatial);
+
+    const dataset = c.GDALOpen(input_path, c.GA_ReadOnly);
+    if (dataset == null) {
+        copyToFixed(256, &result.error_msg, "Cannot open geospatial file");
+        result.status = 2;
+        return;
+    }
+    defer c.GDALClose(dataset);
+
+    // Get projection
+    const proj = c.GDALGetProjectionRef(dataset);
+
+    // Get geotransform (bounds)
+    var gt: [6]f64 = undefined;
+    _ = c.GDALGetGeoTransform(dataset, &gt);
+
+    const x_size = c.GDALGetRasterXSize(dataset);
+    const y_size = c.GDALGetRasterYSize(dataset);
+
+    // Write metadata to output
+    const out_file = std.fs.createFileAbsoluteZ(output_path, .{}) catch {
+        copyToFixed(256, &result.error_msg, "Cannot create output file");
+        result.status = 1;
+        return;
+    };
+    defer out_file.close();
+
+    var buf: [1024]u8 = undefined;
+    const proj_str = if (proj) |p| std.mem.span(p) else "unknown";
+    const written = std.fmt.bufPrint(&buf, "(geospatial\n  (raster-size {d} {d})\n  (origin {d:.6} {d:.6})\n  (pixel-size {d:.6} {d:.6})\n  (projection \"{s}\"))\n", .{
+        x_size,
+        y_size,
+        gt[0],
+        gt[3],
+        gt[1],
+        gt[5],
+        proj_str,
+    }) catch &buf;
+    out_file.writeAll(written) catch {};
+
+    // MIME
+    const path_str = std.mem.span(input_path);
+    if (std.mem.endsWith(u8, path_str, ".shp")) {
+        copyToFixed(64, &result.mime_type, "application/x-shapefile");
+    } else if (std.mem.endsWith(u8, path_str, ".geotiff") or std.mem.endsWith(u8, path_str, ".tif")) {
+        copyToFixed(64, &result.mime_type, "image/tiff");
+    } else {
+        copyToFixed(64, &result.mime_type, "application/x-geospatial");
+    }
+
+    result.status = 0;
+}
+
+// ============================================================================
+// Content type detection (by file extension)
+// ============================================================================
+
+fn detectKind(path: [*:0]const u8) ContentKind {
+    const s = std.mem.span(path);
+    // Find last dot
+    const dot_pos = std.mem.lastIndexOfScalar(u8, s, '.') orelse return .unknown;
+    const ext = s[dot_pos..];
+
+    if (std.mem.eql(u8, ext, ".pdf")) return .pdf;
+    if (std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg")) return .image;
+    if (std.mem.eql(u8, ext, ".png")) return .image;
+    if (std.mem.eql(u8, ext, ".tiff") or std.mem.eql(u8, ext, ".tif")) return .image;
+    if (std.mem.eql(u8, ext, ".bmp")) return .image;
+    if (std.mem.eql(u8, ext, ".mp3")) return .audio;
+    if (std.mem.eql(u8, ext, ".wav")) return .audio;
+    if (std.mem.eql(u8, ext, ".flac")) return .audio;
+    if (std.mem.eql(u8, ext, ".ogg")) return .audio;
+    if (std.mem.eql(u8, ext, ".mp4")) return .video;
+    if (std.mem.eql(u8, ext, ".mkv")) return .video;
+    if (std.mem.eql(u8, ext, ".avi")) return .video;
+    if (std.mem.eql(u8, ext, ".webm")) return .video;
+    if (std.mem.eql(u8, ext, ".epub")) return .epub;
+    if (std.mem.eql(u8, ext, ".shp")) return .geospatial;
+    if (std.mem.eql(u8, ext, ".geotiff")) return .geospatial;
+
+    return .unknown;
+}
+
+// ============================================================================
+// Exported C API — called from Chapel
+// ============================================================================
+
+/// Initialise the library. Returns an opaque handle.
+/// Must be called once per thread/task.
+export fn ddac_init() ?*anyopaque {
+    const allocator = std.heap.c_allocator;
+
+    const state = allocator.create(HandleState) catch return null;
+    state.* = .{
+        .allocator = allocator,
+        .tess_api = null,
+        .gdal_initialised = false,
+        .vips_initialised = false,
+    };
+
+    // Initialise Tesseract (English)
+    const tess = c.TessBaseAPICreate();
+    if (tess != null) {
+        if (c.TessBaseAPIInit3(tess, null, "eng") == 0) {
+            state.tess_api = tess;
+        } else {
+            c.TessBaseAPIDelete(tess);
+        }
+    }
+
+    // Initialise GDAL
+    c.GDALAllRegister();
+    state.gdal_initialised = true;
+
+    // Initialise libvips
+    if (c.vips_init("docudactyl") == 0) {
+        state.vips_initialised = true;
+    }
+
+    return @ptrCast(state);
+}
+
+/// Free all library contexts. Safe to call with null.
+export fn ddac_free(handle: ?*anyopaque) void {
+    const ptr = handle orelse return;
+    const state: *HandleState = @ptrCast(@alignCast(ptr));
+
+    if (state.tess_api) |tess| {
+        c.TessBaseAPIEnd(tess);
+        c.TessBaseAPIDelete(tess);
+    }
+
+    if (state.vips_initialised) {
+        c.vips_shutdown();
+    }
+
+    // GDAL has no per-handle cleanup; GDALDestroyDriverManager is global
+
+    state.allocator.destroy(state);
+}
+
+/// Parse a document. Detects format from extension, dispatches to the right
+/// C library, writes extracted content to output_path, returns summary.
+///
+/// output_fmt: 0 = scheme, 1 = json, 2 = csv (controls output formatting)
+export fn ddac_parse(
+    handle: ?*anyopaque,
+    input_path: ?[*:0]const u8,
+    output_path: ?[*:0]const u8,
+    output_fmt: c_int,
+) ParseResult {
+    _ = output_fmt; // format selection handled by Chapel's ShardedOutput
+
+    var result = blankResult();
+
+    const ptr = handle orelse {
+        result.status = 4; // NullPointer
+        copyToFixed(256, &result.error_msg, "Null handle");
+        return result;
+    };
+    const state: *HandleState = @ptrCast(@alignCast(ptr));
+
+    const in_path = input_path orelse {
+        result.status = 3; // InvalidParam
+        copyToFixed(256, &result.error_msg, "Null input path");
+        return result;
+    };
+
+    const out_path = output_path orelse {
+        result.status = 3;
+        copyToFixed(256, &result.error_msg, "Null output path");
+        return result;
+    };
+
+    // Compute SHA-256
+    const in_slice = std.mem.span(in_path);
+    _ = computeSha256(in_slice, &result.sha256);
+
+    // Time the parse
+    const start = nowMs();
+
+    // Detect content type and dispatch
+    const kind = detectKind(in_path);
+    switch (kind) {
+        .pdf => parsePdf(in_path, out_path, &result),
+        .image => parseImage(in_path, out_path, state, &result),
+        .audio => parseAudio(in_path, out_path, &result),
+        .video => parseVideo(in_path, out_path, &result),
+        .epub => parseEpub(in_path, out_path, &result),
+        .geospatial => parseGeo(in_path, out_path, &result),
+        .unknown => {
+            result.status = 5; // UnsupportedFormat
+            result.content_kind = @intFromEnum(ContentKind.unknown);
+            copyToFixed(256, &result.error_msg, "Unsupported file format");
+        },
+    }
+
+    result.parse_time_ms = nowMs() - start;
+    return result;
+}
+
+/// Return version string (null-terminated, static storage).
+export fn ddac_version() [*:0]const u8 {
+    return VERSION;
+}

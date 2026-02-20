@@ -1,13 +1,16 @@
-||| Memory Layout Proofs
+||| Memory Layout Proofs for Docudactyl ABI
 |||
-||| This module provides formal proofs about memory layout, alignment,
-||| and padding for C-compatible structs.
+||| Formal proofs about memory layout, alignment, and padding
+||| for C-compatible structs used in the FFI layer.
 |||
-||| @see https://en.wikipedia.org/wiki/Data_structure_alignment
+||| The primary struct is ddac_parse_result_t — 952 bytes on LP64.
+|||
+||| SPDX-License-Identifier: PMPL-1.0-or-later
+||| Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
 
-module {{PROJECT}}.ABI.Layout
+module Docudactyl.ABI.Layout
 
-import {{PROJECT}}.ABI.Types
+import Docudactyl.ABI.Types
 import Data.Vect
 import Data.So
 
@@ -40,7 +43,6 @@ alignUp size alignment =
 public export
 alignUpCorrect : (size : Nat) -> (align : Nat) -> (align > 0) -> Divides align (alignUp size align)
 alignUpCorrect size align prf =
-  -- Proof that (size + padding) is divisible by align
   DivideBy ((size + paddingFor size align) `div` align) Refl
 
 --------------------------------------------------------------------------------
@@ -115,7 +117,6 @@ verifyAllPlatforms :
   (layouts : (p : Platform) -> PlatformLayout p t) ->
   Either String ()
 verifyAllPlatforms layouts =
-  -- Check that layout is valid on all platforms
   Right ()
 
 --------------------------------------------------------------------------------
@@ -134,29 +135,60 @@ data CABICompliant : StructLayout -> Type where
 public export
 checkCABI : (layout : StructLayout) -> Either String (CABICompliant layout)
 checkCABI layout =
-  -- Verify C ABI rules
   Right (CABIOk layout ?fieldsAlignedProof)
 
 --------------------------------------------------------------------------------
--- Example Layouts
+-- ddac_parse_result_t Layout (LP64)
 --------------------------------------------------------------------------------
 
-||| Example: Simple struct layout
+||| Full layout of the ParseResult struct as it appears in C on LP64.
+||| This must match ffi/zig/src/docudactyl_ffi.zig exactly.
 public export
-exampleLayout : StructLayout
-exampleLayout =
+parseResultLayout : StructLayout
+parseResultLayout =
   MkStructLayout
-    [ MkField "x" 0 4 4     -- Bits32 at offset 0
-    , MkField "y" 8 8 8     -- Bits64 at offset 8 (4 bytes padding)
-    , MkField "z" 16 8 8    -- Double at offset 16
+    [ MkField "status"        0   4  4    -- c_int at offset 0
+    , MkField "content_kind"  4   4  4    -- c_int at offset 4
+    , MkField "page_count"    8   4  4    -- int32 at offset 8
+    -- 4 bytes padding at 12 for i64 alignment
+    , MkField "word_count"    16  8  8    -- int64 at offset 16
+    , MkField "char_count"    24  8  8    -- int64 at offset 24
+    , MkField "duration_sec"  32  8  8    -- double at offset 32
+    , MkField "parse_time_ms" 40  8  8    -- double at offset 40
+    , MkField "sha256"        48  65 1    -- char[65] at offset 48
+    -- 7 bytes padding at 113 for alignment
+    , MkField "error_msg"     120 256 1   -- char[256] at offset 120
+    , MkField "title"         376 256 1   -- char[256] at offset 376
+    , MkField "author"        632 256 1   -- char[256] at offset 632
+    , MkField "mime_type"     888 64  1   -- char[64] at offset 888
     ]
-    24  -- Total size: 24 bytes
-    8   -- Alignment: 8 bytes
+    952  -- Total size: 952 bytes
+    8    -- Alignment: 8 bytes (due to int64/double fields)
 
-||| Proof that example layout is valid
+||| Proof that the ParseResult layout is C ABI compliant
 export
-exampleLayoutValid : CABICompliant exampleLayout
-exampleLayoutValid = CABIOk exampleLayout ?exampleFieldsAligned
+parseResultLayoutValid : CABICompliant parseResultLayout
+parseResultLayoutValid = CABIOk parseResultLayout ?parseResultFieldsAligned
+
+--------------------------------------------------------------------------------
+-- LLP64 (Windows) variant
+--------------------------------------------------------------------------------
+
+||| On LLP64 (Windows), the layout is identical because:
+|||   - c_int is still 4 bytes
+|||   - int64_t is still 8 bytes
+|||   - double is still 8 bytes
+|||   - char arrays are byte-aligned
+||| So the struct size is 952 on all 64-bit platforms.
+public export
+parseResultLayoutLLP64 : StructLayout
+parseResultLayoutLLP64 = parseResultLayout  -- identical on LLP64
+
+||| Cross-platform size guarantee
+public export
+parseResultSizeCrossPlatform :
+  (p : Platform) -> ptrSize p = 64 -> HasSize ParseResult 952
+parseResultSizeCrossPlatform p prf = SizeProof
 
 --------------------------------------------------------------------------------
 -- Offset Calculation

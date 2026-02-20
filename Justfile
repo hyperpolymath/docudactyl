@@ -15,12 +15,14 @@ set positional-arguments := true
 # Project metadata
 project := "docudactyl"
 version := "0.1.0"
-tier := "1"  # Tier 1: Julia + OCaml + Ada
+tier := "1"  # Tier 1: Chapel + OCaml + Ada + Zig FFI
 
 # Component paths
 julia_src := "src/julia"
 ocaml_src := "src/ocaml"
 ada_src := "src/ada"
+chapel_src := "src/chapel"
+zig_ffi := "ffi/zig"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DEFAULT & HELP
@@ -441,6 +443,66 @@ combinations:
     @echo "CI Matrix:    just ci-matrix [lint|test|build|security|all] [quick|full]"
     @echo ""
     @echo "Total combinations: ~10 billion"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HPC (Chapel + Zig FFI)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Build the Zig FFI shared/static libraries
+build-ffi:
+    @echo "Building Zig FFI (poppler, tesseract, ffmpeg, libxml2, gdal, vips)..."
+    cd {{zig_ffi}} && zig build -Doptimize=ReleaseFast
+
+# Build Chapel HPC binary (depends on Zig FFI)
+build-chapel: build-ffi
+    @echo "Building Chapel HPC engine..."
+    @mkdir -p bin
+    chpl {{chapel_src}}/DocudactylHPC.chpl \
+         {{chapel_src}}/Config.chpl \
+         {{chapel_src}}/ContentType.chpl \
+         {{chapel_src}}/FFIBridge.chpl \
+         {{chapel_src}}/ManifestLoader.chpl \
+         {{chapel_src}}/FaultHandler.chpl \
+         {{chapel_src}}/ProgressReporter.chpl \
+         {{chapel_src}}/ShardedOutput.chpl \
+         {{chapel_src}}/ResultAggregator.chpl \
+         -o bin/docudactyl-hpc \
+         -L{{zig_ffi}}/zig-out/lib -ldocudactyl_ffi \
+         --fast
+
+# Build complete HPC stack (FFI + Chapel)
+build-hpc: build-ffi build-chapel
+    @echo "HPC stack built: bin/docudactyl-hpc"
+
+# Run HPC engine on a manifest (single locale)
+run-hpc manifest *args:
+    bin/docudactyl-hpc --manifestPath={{manifest}} {{args}}
+
+# Run HPC engine on a cluster (multiple locales)
+run-hpc-cluster manifest locales="64" *args:
+    bin/docudactyl-hpc --manifestPath={{manifest}} -nl {{locales}} {{args}}
+
+# Generate a manifest file from a directory of documents
+generate-manifest dir output="manifest.txt":
+    find {{dir}} -type f \( -name '*.pdf' -o -name '*.jpg' -o -name '*.png' \
+         -o -name '*.tiff' -o -name '*.mp3' -o -name '*.wav' -o -name '*.mp4' \
+         -o -name '*.epub' -o -name '*.shp' \) > {{output}}
+    @echo "Manifest written to {{output}} ($$(wc -l < {{output}}) files)"
+
+# Run Zig FFI tests
+test-ffi:
+    @echo "Running Zig FFI tests..."
+    cd {{zig_ffi}} && zig build test
+
+# Check Chapel syntax without full compilation
+check-chapel:
+    @echo "Checking Chapel syntax..."
+    chpl --syntax-only {{chapel_src}}/DocudactylHPC.chpl {{chapel_src}}/*.chpl
+
+# Clean HPC build artifacts [reversible: rebuild with `just build-hpc`]
+clean-hpc:
+    rm -rf bin/docudactyl-hpc
+    rm -rf {{zig_ffi}}/zig-out {{zig_ffi}}/.zig-cache
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # VERSION CONTROL
