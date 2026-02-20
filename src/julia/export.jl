@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 Hyperpolymath
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Palimpsest-0.5
+# SPDX-License-Identifier: PMPL-1.0-or-later
 
 """
 Export functions for extracted PDF content.
@@ -125,7 +125,7 @@ processed by Guile, Racket, or other Scheme implementations.
 function export_scheme(doc::PDFDocument, filepath::String)
     open(filepath, "w") do io
         println(io, ";; SPDX-FileCopyrightText: 2025 Hyperpolymath")
-        println(io, ";; SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Palimpsest-0.5")
+        println(io, ";; SPDX-License-Identifier: PMPL-1.0-or-later")
         println(io, ";;")
         println(io, ";; Docudactyl PDF extraction - Scheme export")
         println(io, ";; Generated: $(Dates.now())")

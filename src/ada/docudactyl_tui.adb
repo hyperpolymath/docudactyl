@@ -1,5 +1,5 @@
 -- SPDX-FileCopyrightText: 2025 Hyperpolymath
--- SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Palimpsest-0.5
+-- SPDX-License-Identifier: PMPL-1.0-or-later
 
 -- Docudactyl TUI: Terminal User Interface for PDF text extraction
 --

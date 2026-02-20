@@ -448,27 +448,31 @@ combinations:
 # HPC (Chapel + Zig FFI)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Toolbox container for HPC builds (Chapel + C library -devel headers)
+toolbox := "fedora-toolbox-43"
+
 # Build the Zig FFI shared/static libraries
 build-ffi:
     @echo "Building Zig FFI (poppler, tesseract, ffmpeg, libxml2, gdal, vips)..."
-    cd {{zig_ffi}} && zig build -Doptimize=ReleaseFast
+    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && cd {{zig_ffi}} && zig build -Doptimize=ReleaseFast'
 
 # Build Chapel HPC binary (depends on Zig FFI)
 build-chapel: build-ffi
     @echo "Building Chapel HPC engine..."
     @mkdir -p bin
-    chpl {{chapel_src}}/DocudactylHPC.chpl \
-         {{chapel_src}}/Config.chpl \
-         {{chapel_src}}/ContentType.chpl \
-         {{chapel_src}}/FFIBridge.chpl \
-         {{chapel_src}}/ManifestLoader.chpl \
-         {{chapel_src}}/FaultHandler.chpl \
-         {{chapel_src}}/ProgressReporter.chpl \
-         {{chapel_src}}/ShardedOutput.chpl \
-         {{chapel_src}}/ResultAggregator.chpl \
-         -o bin/docudactyl-hpc \
-         -L{{zig_ffi}}/zig-out/lib -ldocudactyl_ffi \
-         --fast
+    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && \
+         chpl {{chapel_src}}/DocudactylHPC.chpl \
+              {{chapel_src}}/Config.chpl \
+              {{chapel_src}}/ContentType.chpl \
+              {{chapel_src}}/FFIBridge.chpl \
+              {{chapel_src}}/ManifestLoader.chpl \
+              {{chapel_src}}/FaultHandler.chpl \
+              {{chapel_src}}/ProgressReporter.chpl \
+              {{chapel_src}}/ShardedOutput.chpl \
+              {{chapel_src}}/ResultAggregator.chpl \
+              -o bin/docudactyl-hpc \
+              -L{{zig_ffi}}/zig-out/lib -ldocudactyl_ffi \
+              --fast'
 
 # Build complete HPC stack (FFI + Chapel)
 build-hpc: build-ffi build-chapel
@@ -476,11 +480,11 @@ build-hpc: build-ffi build-chapel
 
 # Run HPC engine on a manifest (single locale)
 run-hpc manifest *args:
-    bin/docudactyl-hpc --manifestPath={{manifest}} {{args}}
+    toolbox run -c {{toolbox}} bash -c 'export LD_LIBRARY_PATH="{{zig_ffi}}/zig-out/lib:$$LD_LIBRARY_PATH" && bin/docudactyl-hpc --manifestPath={{manifest}} {{args}}'
 
 # Run HPC engine on a cluster (multiple locales)
 run-hpc-cluster manifest locales="64" *args:
-    bin/docudactyl-hpc --manifestPath={{manifest}} -nl {{locales}} {{args}}
+    toolbox run -c {{toolbox}} bash -c 'export LD_LIBRARY_PATH="{{zig_ffi}}/zig-out/lib:$$LD_LIBRARY_PATH" && bin/docudactyl-hpc --manifestPath={{manifest}} -nl {{locales}} {{args}}'
 
 # Generate a manifest file from a directory of documents
 generate-manifest dir output="manifest.txt":
@@ -489,15 +493,15 @@ generate-manifest dir output="manifest.txt":
          -o -name '*.epub' -o -name '*.shp' \) > {{output}}
     @echo "Manifest written to {{output}} ($$(wc -l < {{output}}) files)"
 
-# Run Zig FFI tests
+# Run Zig FFI integration tests
 test-ffi:
     @echo "Running Zig FFI tests..."
-    cd {{zig_ffi}} && zig build test
+    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && cd {{zig_ffi}} && zig build test'
 
-# Check Chapel syntax without full compilation
+# Check Chapel parse validity
 check-chapel:
     @echo "Checking Chapel syntax..."
-    chpl --syntax-only {{chapel_src}}/DocudactylHPC.chpl {{chapel_src}}/*.chpl
+    toolbox run -c {{toolbox}} chpl --parse-only {{chapel_src}}/DocudactylHPC.chpl {{chapel_src}}/*.chpl
 
 # Clean HPC build artifacts [reversible: rebuild with `just build-hpc`]
 clean-hpc:

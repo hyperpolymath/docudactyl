@@ -1,5 +1,5 @@
 (* SPDX-FileCopyrightText: 2025 Hyperpolymath *)
-(* SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Palimpsest-0.5 *)
+(* SPDX-License-Identifier: PMPL-1.0-or-later *)
 
 (** Scheme (S-expression) code emitter for PDF documents. *)
 
@@ -77,7 +77,7 @@ let emit_document doc =
   let pages_str = String.concat "\n" (List.map emit_page doc.pages) in
 
   Printf.sprintf {|;; SPDX-FileCopyrightText: 2025 Hyperpolymath
-;; SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Palimpsest-0.5
+;; SPDX-License-Identifier: PMPL-1.0-or-later
 ;;
 ;; Docudactyl PDF extraction - Scheme representation
 ;; Transformed by docudactyl-scm (OCaml)
