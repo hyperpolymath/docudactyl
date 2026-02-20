@@ -1,0 +1,19 @@
+# Docudactyl HPC — Pinned tool versions (asdf)
+#
+# These versions are tested and known to work with the current codebase.
+# Upgrading any of these requires testing:
+#   - Zig: build.zig API changes (0.14→0.15 broke addSharedLibrary)
+#   - Idris2: ABI proof syntax may change
+#   - OCaml: dune build compatibility
+#   - Julia: legacy component only
+#
+# Chapel is NOT managed by asdf — it's system-installed via rpm.
+# Current tested version: 2.7.0
+#
+# SPDX-License-Identifier: PMPL-1.0-or-later
+
+zig 0.15.2
+idris2 0.8.0
+ocaml 5.4.1
+julia 1.12.5
+just 1.46.0

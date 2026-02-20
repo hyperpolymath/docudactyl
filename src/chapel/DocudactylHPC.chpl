@@ -24,12 +24,30 @@ use ResultAggregator;
 use DynamicIters;
 use Time;
 use CTypes;
+use Version;
+
+// Minimum Chapel version required (2.7.0 for --parse-only, begin ref intent)
+param DOCUDACTYL_MIN_CHAPEL_MAJOR = 2;
+param DOCUDACTYL_MIN_CHAPEL_MINOR = 7;
 
 proc main() throws {
+  // ── Version checks ────────────────────────────────────────────────
+  if chplVersion.major < DOCUDACTYL_MIN_CHAPEL_MAJOR ||
+     (chplVersion.major == DOCUDACTYL_MIN_CHAPEL_MAJOR &&
+      chplVersion.minor < DOCUDACTYL_MIN_CHAPEL_MINOR) {
+    writeln("[FATAL] Docudactyl HPC requires Chapel >= ",
+            DOCUDACTYL_MIN_CHAPEL_MAJOR, ".", DOCUDACTYL_MIN_CHAPEL_MINOR,
+            ".0 but running on ", chplVersion);
+    return;
+  }
+
   writeln("═══════════════════════════════════════════════════════════");
   writeln("  Docudactyl HPC Engine");
   writeln("  Locales: ", numLocales, "  |  Manifest: ", manifestPath);
   writeln("  Output:  ", outputDir, " (", outputFormat, ")");
+  if manifestMode != "shared" then
+    writeln("  Manifest mode: ", manifestMode);
+  writeln("  Chapel: ", chplVersion);
   writeln("═══════════════════════════════════════════════════════════");
   writeln();
 

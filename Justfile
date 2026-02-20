@@ -258,18 +258,18 @@ cookbook:
 man:
     #!/usr/bin/env bash
     mkdir -p docs/man
-    cat > docs/man/{{project}}.1 << EOF
-.TH RSR-TEMPLATE-REPO 1 "$(date +%Y-%m-%d)" "{{version}}" "RSR Template Manual"
-.SH NAME
-{{project}} \- RSR standard repository template
-.SH SYNOPSIS
-.B just
-[recipe] [args...]
-.SH DESCRIPTION
-Canonical template for RSR (Rhodium Standard Repository) projects.
-.SH AUTHOR
-Hyperpolymath <hyperpolymath@proton.me>
-EOF
+    printf '%s\n' \
+        ".TH {{project}} 1 \"$(date +%Y-%m-%d)\" \"{{version}}\" \"{{project}} Manual\"" \
+        ".SH NAME" \
+        "{{project}} \\- document processing engine" \
+        ".SH SYNOPSIS" \
+        ".B just" \
+        "[recipe] [args...]" \
+        ".SH DESCRIPTION" \
+        "HPC document processing engine for British Library scale corpora." \
+        ".SH AUTHOR" \
+        "Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>" \
+        > docs/man/{{project}}.1
     echo "Generated: docs/man/{{project}}.1"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -303,14 +303,11 @@ ci: deps quality
 
 # Install git hooks
 install-hooks:
-    @mkdir -p .git/hooks
-    @cat > .git/hooks/pre-commit << 'EOF'
-#!/bin/bash
-just fmt-check || exit 1
-just lint || exit 1
-EOF
-    @chmod +x .git/hooks/pre-commit
-    @echo "Git hooks installed"
+    #!/usr/bin/env bash
+    mkdir -p .git/hooks
+    printf '%s\n' '#!/bin/bash' 'just fmt-check || exit 1' 'just lint || exit 1' > .git/hooks/pre-commit
+    chmod +x .git/hooks/pre-commit
+    echo "Git hooks installed"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECURITY
@@ -449,7 +446,8 @@ combinations:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Toolbox container for HPC builds (Chapel + C library -devel headers)
-toolbox := "fedora-toolbox-43"
+# Override: DOCUDACTYL_TOOLBOX=fedora-toolbox-44 just build-hpc
+toolbox := env("DOCUDACTYL_TOOLBOX", "fedora-toolbox-43")
 
 # Build the Zig FFI shared/static libraries
 build-ffi:
@@ -504,6 +502,50 @@ test-ffi:
 check-chapel:
     @echo "Checking Chapel syntax..."
     toolbox run -c {{toolbox}} chpl --parse-only {{chapel_src}}/DocudactylHPC.chpl {{chapel_src}}/*.chpl
+
+# Check all HPC C library dependencies and versions
+deps-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Docudactyl HPC Dependency Check ==="
+    echo ""
+    FAIL=0
+    check_lib() {
+        local name="$1" min_ver="$2"
+        local ver
+        ver=$(toolbox run -c {{toolbox}} pkg-config --modversion "$name" 2>/dev/null || echo "")
+        if [ -z "$ver" ]; then
+            echo "  MISSING  $name (need >= $min_ver)"
+            FAIL=1
+        else
+            echo "  OK       $name $ver (need >= $min_ver)"
+        fi
+    }
+    check_lib poppler-glib 25.0.0
+    check_lib glib-2.0     2.80.0
+    check_lib tesseract     5.0.0
+    check_lib lept          1.80.0
+    check_lib libavformat   61.0.0
+    check_lib libavcodec    61.0.0
+    check_lib libavutil     59.0.0
+    check_lib libxml-2.0    2.12.0
+    check_lib gdal          3.11.0
+    check_lib vips          8.17.0
+    echo ""
+    # Check build tools
+    echo "--- Build tools ---"
+    ZIG_VER=$(toolbox run -c {{toolbox}} bash -c "export PATH=\$HOME/.asdf/shims:\$HOME/.asdf/bin:\$PATH && zig version 2>/dev/null" || echo "")
+    CHPL_VER=$(toolbox run -c {{toolbox}} bash -c "chpl --version 2>/dev/null | head -1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+'" || echo "")
+    [ -n "$ZIG_VER" ]  && echo "  OK       zig $ZIG_VER (need >= 0.15.0)"  || { echo "  MISSING  zig (need >= 0.15.0)"; FAIL=1; }
+    [ -n "$CHPL_VER" ] && echo "  OK       chpl $CHPL_VER (need >= 2.7.0)" || { echo "  MISSING  chpl (need >= 2.7.0)"; FAIL=1; }
+    echo ""
+    if [ "$FAIL" -eq 0 ]; then
+        echo "All dependencies satisfied."
+    else
+        echo "ERROR: Missing dependencies. Install with:"
+        echo "  toolbox run -c {{toolbox}} sudo dnf install poppler-devel tesseract-devel leptonica-devel ffmpeg-free-devel libxml2-devel gdal-devel vips-devel"
+        exit 1
+    fi
 
 # Clean HPC build artifacts [reversible: rebuild with `just build-hpc`]
 clean-hpc:

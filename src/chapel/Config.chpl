@@ -49,6 +49,14 @@ module Config {
       300000 ms = 5 minutes (generous for 1000-page manuscripts). */
   config const timeoutPerDocMs: int = 300000;
 
+  // ── Multi-Locale / Cluster ─────────────────────────────────────────
+
+  /** Manifest loading strategy:
+        "shared"    — all locales can read the manifest file (shared filesystem)
+        "broadcast" — locale 0 reads the manifest and broadcasts to all others
+      Use "broadcast" on clusters without a shared filesystem. */
+  config const manifestMode: string = "shared";
+
   // ── Output Format Codes (for FFI) ──────────────────────────────────
 
   /** Map string format name to integer code for Zig FFI. */

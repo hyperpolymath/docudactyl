@@ -37,11 +37,55 @@ const c = @cImport({
 });
 
 // ============================================================================
-// Version
+// Version & Compile-Time Dependency Checks
 // ============================================================================
 
 const VERSION = "0.1.0";
 const BUILD_INFO = "docudactyl-ffi built with Zig " ++ @import("builtin").zig_version_string;
+
+// Zig minimum version: 0.15.0 (Module-based build API)
+comptime {
+    const zig_ver = @import("builtin").zig_version;
+    if (zig_ver.major == 0 and zig_ver.minor < 15) {
+        @compileError("Docudactyl FFI requires Zig >= 0.15.0 (build API changed)");
+    }
+}
+
+// Poppler: verify poppler_document_new_from_file exists (available since Poppler 0.1)
+comptime {
+    if (!@hasDecl(c, "poppler_document_new_from_file")) {
+        @compileError("Poppler headers missing or too old: poppler_document_new_from_file not found");
+    }
+}
+
+// Tesseract: verify TessBaseAPIInit3 exists (Tesseract 3.02+; may be removed in 6.0)
+comptime {
+    if (!@hasDecl(c, "TessBaseAPIInit3")) {
+        @compileError("Tesseract headers missing or too old: TessBaseAPIInit3 not found. " ++
+            "If Tesseract 6.0+ removed this, switch to TessBaseAPIInit4.");
+    }
+}
+
+// FFmpeg: verify avformat_open_input exists (libavformat 53+)
+comptime {
+    if (!@hasDecl(c, "avformat_open_input")) {
+        @compileError("FFmpeg headers missing or too old: avformat_open_input not found");
+    }
+}
+
+// GDAL: verify GDALOpen exists
+comptime {
+    if (!@hasDecl(c, "GDALOpen")) {
+        @compileError("GDAL headers missing or too old: GDALOpen not found");
+    }
+}
+
+// libxml2: verify xmlReadFile exists (libxml2 2.6+)
+comptime {
+    if (!@hasDecl(c, "xmlReadFile")) {
+        @compileError("libxml2 headers missing or too old: xmlReadFile not found");
+    }
+}
 
 // ============================================================================
 // Result struct — flat C-compatible, identical to Chapel's extern record
