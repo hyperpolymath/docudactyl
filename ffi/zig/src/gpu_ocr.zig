@@ -37,7 +37,7 @@ const GpuBackend = enum(u8) {
 };
 
 /// Result of OCR on a single image.
-const OcrResult = extern struct {
+pub const OcrResult = extern struct {
     /// Status: 0=success, 1=error, 2=skipped (too small), 3=gpu_error
     status: u8,
     /// Confidence (0-100), -1 if unavailable

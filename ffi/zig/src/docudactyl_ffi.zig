@@ -145,6 +145,10 @@ const HandleState = struct {
     tess_api: ?*c.TessBaseAPI,
     gdal_initialised: bool,
     vips_initialised: bool,
+    /// ML inference engine handle (optional, set via ddac_set_ml_handle)
+    ml_handle: ?*anyopaque = null,
+    /// GPU OCR coprocessor handle (optional, set via ddac_set_gpu_ocr_handle)
+    gpu_ocr_handle: ?*anyopaque = null,
 };
 
 // ============================================================================
@@ -307,10 +311,68 @@ const CapturedData = struct {
     ocr_confidence: i32 = -1,
 };
 
+/// Detect image MIME type from file extension.
+fn detectImageMime(input_path: [*:0]const u8, result: *ParseResult) void {
+    const path_str = std.mem.span(input_path);
+    if (std.mem.endsWith(u8, path_str, ".png")) {
+        copyToFixed(64, &result.mime_type, "image/png");
+    } else if (std.mem.endsWith(u8, path_str, ".jpg") or std.mem.endsWith(u8, path_str, ".jpeg")) {
+        copyToFixed(64, &result.mime_type, "image/jpeg");
+    } else if (std.mem.endsWith(u8, path_str, ".tiff") or std.mem.endsWith(u8, path_str, ".tif")) {
+        copyToFixed(64, &result.mime_type, "image/tiff");
+    } else if (std.mem.endsWith(u8, path_str, ".bmp")) {
+        copyToFixed(64, &result.mime_type, "image/bmp");
+    } else if (std.mem.endsWith(u8, path_str, ".webp")) {
+        copyToFixed(64, &result.mime_type, "image/webp");
+    } else {
+        copyToFixed(64, &result.mime_type, "image/unknown");
+    }
+}
+
+/// Try GPU OCR for an image. Returns true if GPU processed it successfully
+/// (result is populated and output file is written). Returns false if GPU
+/// processing failed or is unavailable — caller should fall back to CPU.
+fn tryGpuOcr(state: *HandleState, input_path: [*:0]const u8, output_path: [*:0]const u8, result: *ParseResult, captured: *CapturedData) bool {
+    const ocr_handle = state.gpu_ocr_handle orelse return false;
+
+    // Submit single image, immediately flush, and collect
+    const slot = gpu_ocr.ddac_gpu_ocr_submit(ocr_handle, input_path, output_path);
+    if (slot < 0) return false;
+
+    gpu_ocr.ddac_gpu_ocr_flush(ocr_handle);
+
+    const ready = gpu_ocr.ddac_gpu_ocr_results_ready(ocr_handle);
+    if (ready == 0) return false;
+
+    var ocr_result: gpu_ocr.OcrResult = std.mem.zeroes(gpu_ocr.OcrResult);
+    const rc = gpu_ocr.ddac_gpu_ocr_collect(ocr_handle, @intCast(slot), &ocr_result);
+    if (rc != 0) return false;
+
+    // status=3 (gpu_error) means "use CPU fallback"
+    if (ocr_result.status == 3 or ocr_result.status == 1) return false;
+
+    // GPU processed successfully (status=0) or skipped (status=2)
+    result.char_count = ocr_result.char_count;
+    result.word_count = ocr_result.word_count;
+    result.page_count = 1;
+    captured.ocr_confidence = ocr_result.confidence;
+    result.status = 0;
+    return true;
+}
+
 /// Image: OCR via Tesseract + dimensions via libvips
+/// When GPU OCR handle is attached, tries GPU path first (single-image
+/// submit → flush → collect). Falls back to CPU Tesseract on gpu_error.
 fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *HandleState, result: *ParseResult, captured: *CapturedData) void {
     result.content_kind = @intFromEnum(ContentKind.image);
+    detectImageMime(input_path, result);
 
+    // Try GPU OCR first (if handle is attached)
+    if (tryGpuOcr(state, input_path, output_path, result, captured)) {
+        return; // GPU handled it
+    }
+
+    // CPU Tesseract path (original or GPU fallback)
     const tess = state.tess_api orelse {
         copyToFixed(256, &result.error_msg, "Tesseract not initialised");
         result.status = 1;
@@ -341,19 +403,6 @@ fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *Han
         result.page_count = 1;
         result.word_count = 0;
         result.char_count = 0;
-
-        // Detect MIME from extension
-        const path_str = std.mem.span(input_path);
-        if (std.mem.endsWith(u8, path_str, ".png")) {
-            copyToFixed(64, &result.mime_type, "image/png");
-        } else if (std.mem.endsWith(u8, path_str, ".jpg") or std.mem.endsWith(u8, path_str, ".jpeg")) {
-            copyToFixed(64, &result.mime_type, "image/jpeg");
-        } else if (std.mem.endsWith(u8, path_str, ".tiff") or std.mem.endsWith(u8, path_str, ".tif")) {
-            copyToFixed(64, &result.mime_type, "image/tiff");
-        } else {
-            copyToFixed(64, &result.mime_type, "image/unknown");
-        }
-
         result.status = 0;
         return;
     }
@@ -389,19 +438,6 @@ fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *Han
     result.char_count = @intCast(ocr_text.len);
     result.word_count = countWords(ocr_text);
     result.page_count = 1;
-
-    // Detect MIME from extension
-    const path_str = std.mem.span(input_path);
-    if (std.mem.endsWith(u8, path_str, ".png")) {
-        copyToFixed(64, &result.mime_type, "image/png");
-    } else if (std.mem.endsWith(u8, path_str, ".jpg") or std.mem.endsWith(u8, path_str, ".jpeg")) {
-        copyToFixed(64, &result.mime_type, "image/jpeg");
-    } else if (std.mem.endsWith(u8, path_str, ".tiff") or std.mem.endsWith(u8, path_str, ".tif")) {
-        copyToFixed(64, &result.mime_type, "image/tiff");
-    } else {
-        copyToFixed(64, &result.mime_type, "image/unknown");
-    }
-
     result.status = 0;
 }
 
@@ -876,11 +912,30 @@ export fn ddac_parse(
             .duration_sec = result.duration_sec,
             .ocr_confidence = captured.ocr_confidence,
             .tess_api = if (state.tess_api) |t| @ptrCast(t) else null,
+            .ml_handle = state.ml_handle,
         };
         stages.runStages(stage_ctx);
     }
 
     return result;
+}
+
+/// Attach an ML inference engine handle to a parse handle.
+/// Must be called after ddac_init(). The ML handle remains owned by the caller
+/// (Chapel) — it will NOT be freed by ddac_free().
+export fn ddac_set_ml_handle(handle: ?*anyopaque, ml_handle: ?*anyopaque) void {
+    const ptr = handle orelse return;
+    const state: *HandleState = @ptrCast(@alignCast(ptr));
+    state.ml_handle = ml_handle;
+}
+
+/// Attach a GPU OCR coprocessor handle to a parse handle.
+/// Must be called after ddac_init(). The GPU OCR handle remains owned by the
+/// caller (Chapel) — it will NOT be freed by ddac_free().
+export fn ddac_set_gpu_ocr_handle(handle: ?*anyopaque, ocr_handle: ?*anyopaque) void {
+    const ptr = handle orelse return;
+    const state: *HandleState = @ptrCast(@alignCast(ptr));
+    state.gpu_ocr_handle = ocr_handle;
 }
 
 /// Return version string (null-terminated, static storage).

@@ -53,7 +53,7 @@ const ExecProvider = enum(u8) {
 // ============================================================================
 
 /// Result of running an ML stage on a document.
-const MlResult = extern struct {
+pub const MlResult = extern struct {
     /// Status: 0=success, 1=model_not_found, 2=inference_error,
     ///         3=input_error, 4=onnx_not_available
     status: u8,

@@ -64,6 +64,26 @@ module FFIBridge {
   /** Get library version string (static storage, do not free). */
   extern proc ddac_version(): c_ptrConst(c_char);
 
+  // ── Subsystem handle attachment ─────────────────────────────────────
+  //
+  // Attach ML and GPU OCR handles to a parse handle so that ddac_parse()
+  // can dispatch to these subsystems internally. The handles remain owned
+  // by Chapel (freed separately); ddac_free() does NOT touch them.
+
+  /** Attach an ML inference engine handle (from ddac_ml_init).
+      When set, ML-dependent stages dispatch to ONNX Runtime. */
+  extern proc ddac_set_ml_handle(
+    handle: c_ptr(void),
+    ml_handle: c_ptr(void)
+  ): void;
+
+  /** Attach a GPU OCR coprocessor handle (from ddac_gpu_ocr_init).
+      When set, image parsing tries GPU OCR first, falling back to CPU. */
+  extern proc ddac_set_gpu_ocr_handle(
+    handle: c_ptr(void),
+    gpu_ocr_handle: c_ptr(void)
+  ): void;
+
   // ── LMDB Result Cache ────────────────────────────────────────────────
 
   /** Initialise LMDB cache at dir_path. Returns opaque handle or nil. */

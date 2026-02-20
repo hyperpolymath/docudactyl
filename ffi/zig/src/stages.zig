@@ -15,6 +15,7 @@
 
 const std = @import("std");
 const capnp = @import("capnp.zig");
+const ml_inference = @import("ml_inference.zig");
 
 // C library bindings — same libraries linked by build.zig
 const c = @cImport({
@@ -115,6 +116,8 @@ pub const StageContext = struct {
     ocr_confidence: i32,
     /// Tesseract API handle (opaque, cast to *TessBaseAPI inside stages).
     tess_api: ?*anyopaque,
+    /// ML inference engine handle (opaque, from ddac_ml_init via Chapel).
+    ml_handle: ?*anyopaque = null,
 };
 
 // ============================================================================
@@ -1009,22 +1012,56 @@ pub fn runStages(ctx: StageContext) void {
         stageCoordNormalize(&b, ctx.input_path);
     }
 
-    // ── Phase 8: ML stub stages ──────────────────────────────────────
+    // ── Phase 8: ML stages (dispatch to ONNX Runtime via ml_inference) ──
 
-    if (ctx.stages & STAGE_NER != 0)
-        writeStub(&b, capnp.PTR_NER_STATUS, capnp.PTR_NER_REASON, "Requires ML runtime (spaCy/HuggingFace). Install and rebuild with -DNER_ENABLED.");
+    const ml_stages = [_]struct {
+        flag: u64,
+        stage_id: u8,
+        status_ptr: usize,
+        reason_ptr: usize,
+        name: []const u8,
+        stub_msg: []const u8,
+    }{
+        .{ .flag = STAGE_NER, .stage_id = 0, .status_ptr = capnp.PTR_NER_STATUS, .reason_ptr = capnp.PTR_NER_REASON, .name = "NER", .stub_msg = "Requires ML runtime (spaCy/HuggingFace). Install ONNX Runtime and place ner.onnx in modelDir." },
+        .{ .flag = STAGE_WHISPER_TRANSCRIBE, .stage_id = 1, .status_ptr = capnp.PTR_WHISPER_STATUS, .reason_ptr = capnp.PTR_WHISPER_REASON, .name = "Whisper", .stub_msg = "Requires Whisper model. Install ONNX Runtime and place whisper.onnx in modelDir." },
+        .{ .flag = STAGE_IMAGE_CLASSIFY, .stage_id = 2, .status_ptr = capnp.PTR_IMGCLASS_STATUS, .reason_ptr = capnp.PTR_IMGCLASS_REASON, .name = "ImageClassify", .stub_msg = "Requires image classification model. Install ONNX Runtime and place image_classify.onnx in modelDir." },
+        .{ .flag = STAGE_LAYOUT_ANALYSIS, .stage_id = 3, .status_ptr = capnp.PTR_LAYOUT_STATUS, .reason_ptr = capnp.PTR_LAYOUT_REASON, .name = "Layout", .stub_msg = "Requires document layout model. Install ONNX Runtime and place layout_analysis.onnx in modelDir." },
+        .{ .flag = STAGE_HANDWRITING_OCR, .stage_id = 4, .status_ptr = capnp.PTR_HWOCR_STATUS, .reason_ptr = capnp.PTR_HWOCR_REASON, .name = "Handwriting", .stub_msg = "Requires handwriting recognition model. Install ONNX Runtime and place handwriting_ocr.onnx in modelDir." },
+    };
 
-    if (ctx.stages & STAGE_WHISPER_TRANSCRIBE != 0)
-        writeStub(&b, capnp.PTR_WHISPER_STATUS, capnp.PTR_WHISPER_REASON, "Requires Whisper model and CUDA/Metal runtime.");
-
-    if (ctx.stages & STAGE_IMAGE_CLASSIFY != 0)
-        writeStub(&b, capnp.PTR_IMGCLASS_STATUS, capnp.PTR_IMGCLASS_REASON, "Requires image classification model (ResNet/ViT).");
-
-    if (ctx.stages & STAGE_LAYOUT_ANALYSIS != 0)
-        writeStub(&b, capnp.PTR_LAYOUT_STATUS, capnp.PTR_LAYOUT_REASON, "Requires document layout model (LayoutLM/DiT).");
-
-    if (ctx.stages & STAGE_HANDWRITING_OCR != 0)
-        writeStub(&b, capnp.PTR_HWOCR_STATUS, capnp.PTR_HWOCR_REASON, "Requires handwriting recognition model (TrOCR).");
+    inline for (ml_stages) |ml_stage| {
+        if (ctx.stages & ml_stage.flag != 0) {
+            if (ctx.ml_handle) |ml| {
+                var ml_result: ml_inference.MlResult = std.mem.zeroes(ml_inference.MlResult);
+                const rc = ml_inference.ddac_ml_run_stage(ml, ml_stage.stage_id, ctx.input_path, &ml_result);
+                if (rc == 0 and ml_result.status == 0) {
+                    // ML inference succeeded — write summary
+                    var summary_buf: [256]u8 = undefined;
+                    const summary = std.fmt.bufPrint(&summary_buf, "{s}: {d} outputs, conf={d:.2}, {d}us", .{
+                        ml_stage.name,
+                        ml_result.output_count,
+                        ml_result.confidence,
+                        ml_result.inference_time_us,
+                    }) catch ml_stage.name;
+                    b.setText(ml_stage.status_ptr, "ok");
+                    b.setText(ml_stage.reason_ptr, summary);
+                } else {
+                    // ML inference failed — report status
+                    const status_text = switch (ml_result.status) {
+                        1 => "model_not_found",
+                        2 => "inference_error",
+                        3 => "input_error",
+                        4 => "onnx_not_available",
+                        else => "error",
+                    };
+                    b.setText(ml_stage.status_ptr, status_text);
+                    b.setText(ml_stage.reason_ptr, ml_stage.stub_msg);
+                }
+            } else {
+                writeStub(&b, ml_stage.status_ptr, ml_stage.reason_ptr, ml_stage.stub_msg);
+            }
+        }
+    }
 
     if (ctx.stages & STAGE_FORMAT_CONVERT != 0)
         writeStub(&b, capnp.PTR_FMTCONV_STATUS, capnp.PTR_FMTCONV_REASON, "Format conversion not yet implemented.");

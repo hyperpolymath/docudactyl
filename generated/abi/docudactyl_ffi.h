@@ -78,7 +78,7 @@ enum ddac_parse_status {
 #define DDAC_STAGE_NEAR_DEDUP        (UINT64_C(1) << 12)
 #define DDAC_STAGE_COORD_NORMALIZE   (UINT64_C(1) << 13)
 
-/* ML-dependent stages (stub implementations) */
+/* ML-dependent stages (dispatch to ONNX Runtime when ML handle is attached) */
 #define DDAC_STAGE_NER               (UINT64_C(1) << 14)
 #define DDAC_STAGE_WHISPER           (UINT64_C(1) << 15)
 #define DDAC_STAGE_IMAGE_CLASSIFY    (UINT64_C(1) << 16)
@@ -136,6 +136,18 @@ ddac_parse_result_t ddac_parse(void *handle, const char *input_path,
                                const char *output_path, int output_fmt,
                                uint64_t stage_flags);
 const char *ddac_version(void);
+
+/** Attach an ML inference engine handle to a parse handle.
+ *  The ML handle remains owned by the caller — NOT freed by ddac_free().
+ *  When attached, ML-dependent stages (NER, Whisper, etc.) dispatch to
+ *  ONNX Runtime instead of returning stubs. */
+void  ddac_set_ml_handle(void *handle, void *ml_handle);
+
+/** Attach a GPU OCR coprocessor handle to a parse handle.
+ *  The GPU OCR handle remains owned by the caller — NOT freed by ddac_free().
+ *  When attached, image parsing tries GPU OCR first (submit → flush → collect),
+ *  falling back to CPU Tesseract on gpu_error. */
+void  ddac_set_gpu_ocr_handle(void *handle, void *gpu_ocr_handle);
 
 /* ═══════════════════════════════════════════════════════════════════════
  * LMDB Result Cache

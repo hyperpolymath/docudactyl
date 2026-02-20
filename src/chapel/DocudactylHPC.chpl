@@ -219,6 +219,12 @@ proc main() throws {
       continue;
     }
 
+    // Attach ML and GPU OCR subsystem handles so ddac_parse can use them
+    if mlHandle != nil then
+      ddac_set_ml_handle(handle, mlHandle);
+    if gpuOcrHandle != nil then
+      ddac_set_gpu_ocr_handle(handle, gpuOcrHandle);
+
     // Skip if already processed in a previous run (--resume)
     if isAlreadyProcessed(idx) {
       recordCompletion();
