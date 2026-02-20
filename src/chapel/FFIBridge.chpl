@@ -10,7 +10,7 @@ module FFIBridge {
   use CTypes;
 
   // Pull in the C header so Chapel knows the struct layout
-  require "../../ffi/zig/include/docudactyl_ffi.h";
+  require "../../generated/abi/docudactyl_ffi.h";
 
   // ── Result struct ─────────────────────────────────────────────────────
   // Must match ddac_parse_result_t in docudactyl_ffi.h / docudactyl_ffi.zig.
@@ -42,23 +42,64 @@ module FFIBridge {
 
   // ── Core parse operation ──────────────────────────────────────────────
 
-  /** Parse a single document.
+  /** Parse a single document with optional processing stages.
       - handle: from ddac_init()
       - input_path: absolute path to source document
       - output_path: absolute path for extracted content
       - output_fmt: 0=scheme, 1=json, 2=csv
-      Returns a flat result struct (by value, no allocation). */
+      - stage_flags: bitmask of DDAC_STAGE_* flags (0 = base parse only)
+      Returns a flat result struct (by value, no allocation).
+      Stage results written to {output_path}.stages if stage_flags != 0. */
   extern proc ddac_parse(
     handle: c_ptr(void),
     input_path: c_ptrConst(c_char),
     output_path: c_ptrConst(c_char),
-    output_fmt: c_int
+    output_fmt: c_int,
+    stage_flags: uint(64)
   ): ddac_parse_result_t;
 
   // ── Version information ───────────────────────────────────────────────
 
   /** Get library version string (static storage, do not free). */
   extern proc ddac_version(): c_ptrConst(c_char);
+
+  // ── LMDB Result Cache ────────────────────────────────────────────────
+
+  /** Initialise LMDB cache at dir_path. Returns opaque handle or nil. */
+  extern proc ddac_cache_init(
+    dir_path: c_ptrConst(c_char),
+    max_size_mb: uint(64)
+  ): c_ptr(void);
+
+  /** Free LMDB cache. Safe to call with nil. */
+  extern proc ddac_cache_free(cache: c_ptr(void)): void;
+
+  /** Look up a cached result.
+      Returns 1 (hit) or 0 (miss). On hit, result_out is populated. */
+  extern proc ddac_cache_lookup(
+    cache: c_ptr(void),
+    doc_path: c_ptrConst(c_char),
+    mtime: int(64),
+    file_size: int(64),
+    result_out: c_ptr(void),
+    result_size: c_size_t
+  ): c_int;
+
+  /** Store a parse result in the cache. */
+  extern proc ddac_cache_store(
+    cache: c_ptr(void),
+    doc_path: c_ptrConst(c_char),
+    mtime: int(64),
+    file_size: int(64),
+    result: c_ptrConst(void),
+    result_size: c_size_t
+  ): void;
+
+  /** Return number of entries in the cache. */
+  extern proc ddac_cache_count(cache: c_ptr(void)): uint(64);
+
+  /** Sync cache to disk. */
+  extern proc ddac_cache_sync(cache: c_ptr(void)): void;
 
   // ── Helpers ───────────────────────────────────────────────────────────
 

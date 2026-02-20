@@ -47,25 +47,28 @@ free h = primIO (prim__free (handlePtr h))
 -- Core Parse Operation
 --------------------------------------------------------------------------------
 
-||| Parse a document. Dispatches to the correct C library based on file extension.
+||| Parse a document with optional processing stages.
+||| Dispatches to the correct C library based on file extension.
 |||
 ||| Parameters (as raw Bits64 pointers to C strings):
-|||   handle     - library handle from ddac_init
-|||   input_path - absolute path to input document
+|||   handle      - library handle from ddac_init
+|||   input_path  - absolute path to input document
 |||   output_path - absolute path for extracted content output
 |||   output_fmt  - output format (0=scheme, 1=json, 2=csv)
+|||   stage_flags - bitmask of processing stages (0 = base parse only)
 |||
 ||| Returns a raw pointer to a ddac_parse_result_t struct.
+||| Stage results (if any) written to {output_path}.stages in JSON.
 ||| In practice, Chapel reads the struct fields directly via extern record.
 export
 %foreign "C:ddac_parse, libdocudactyl_ffi"
-prim__parse : Bits64 -> Bits64 -> Bits64 -> Bits64 -> PrimIO Bits64
+prim__parse : Bits64 -> Bits64 -> Bits64 -> Bits64 -> Bits64 -> PrimIO Bits64
 
 ||| Safe wrapper for parse with type-checked status
 export
-parse : Handle -> (inputPath : Bits64) -> (outputPath : Bits64) -> (outputFmt : Bits64) -> IO (Either ParseStatus Bits64)
-parse h inputPath outputPath outputFmt = do
-  resultPtr <- primIO (Docudactyl.ABI.Foreign.prim__parse (handlePtr h) inputPath outputPath outputFmt)
+parse : Handle -> (inputPath : Bits64) -> (outputPath : Bits64) -> (outputFmt : Bits64) -> (stageFlags : Bits64) -> IO (Either ParseStatus Bits64)
+parse h inputPath outputPath outputFmt stageFlags = do
+  resultPtr <- primIO (Docudactyl.ABI.Foreign.prim__parse (handlePtr h) inputPath outputPath outputFmt stageFlags)
   if resultPtr == 0
     then pure (Left Error)
     else pure (Right resultPtr)

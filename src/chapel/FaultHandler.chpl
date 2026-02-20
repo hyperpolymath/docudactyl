@@ -62,12 +62,14 @@ module FaultHandler {
       handle:     from ddac_init()
       inputPath:  absolute path to source document
       outputPath: absolute path for extracted content
-      fmtCode:    output format (0=scheme, 1=json, 2=csv) */
+      fmtCode:    output format (0=scheme, 1=json, 2=csv)
+      stagesMask: bitmask of processing stages to run (0 = none) */
   proc safeParse(
     handle: c_ptr(void),
     inputPath: string,
     outputPath: string,
-    fmtCode: int
+    fmtCode: int,
+    stagesMask: uint(64) = 0
   ): ddac_parse_result_t {
 
     var result: ddac_parse_result_t;
@@ -78,7 +80,8 @@ module FaultHandler {
         handle,
         inputPath.c_str(),
         outputPath.c_str(),
-        fmtCode: c_int
+        fmtCode: c_int,
+        stagesMask
       );
 
       if parseSucceeded(result) {

@@ -1,7 +1,7 @@
 // Docudactyl FFI Build Configuration
 //
 // Builds libdocudactyl_ffi.so (shared) and libdocudactyl_ffi.a (static)
-// Links against: poppler-glib, tesseract, FFmpeg, libxml2, GDAL, libvips
+// Links against: poppler-glib, tesseract, FFmpeg, libxml2, GDAL, libvips, lmdb
 //
 // Requires Zig 0.15+
 //
@@ -138,4 +138,7 @@ fn linkCLibrariesOnModule(module: *std.Build.Module) void {
 
     // libvips (image metadata)
     module.linkSystemLibrary("vips", .{});
+
+    // LMDB (result cache — zero-copy reads, ACID, multi-reader)
+    module.linkSystemLibrary("lmdb", .{});
 }

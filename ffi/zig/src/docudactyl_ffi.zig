@@ -16,6 +16,14 @@
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
 
 const std = @import("std");
+const stages = @import("stages.zig");
+const cache = @import("cache.zig");
+
+// Ensure submodule exports are included in the shared library
+comptime {
+    _ = cache;
+}
+
 const c = @cImport({
     // Poppler (PDF)
     @cInclude("poppler/glib/poppler.h");
@@ -282,8 +290,13 @@ fn parsePdf(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *Pars
 /// in either dimension are too small for Tesseract to produce useful text.
 const MIN_OCR_DIMENSION: c_int = 10;
 
+/// Data captured during base parse, passed to processing stages.
+const CapturedData = struct {
+    ocr_confidence: i32 = -1,
+};
+
 /// Image: OCR via Tesseract + dimensions via libvips
-fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *HandleState, result: *ParseResult) void {
+fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *HandleState, result: *ParseResult, captured: *CapturedData) void {
     result.content_kind = @intFromEnum(ContentKind.image);
 
     const tess = state.tess_api orelse {
@@ -339,6 +352,9 @@ fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *Han
         result.status = 2;
         return;
     }
+
+    // Capture OCR confidence for processing stages (0-100 scale)
+    captured.ocr_confidence = @intCast(c.TessBaseAPIMeanTextConf(tess));
 
     const ocr_text_ptr = c.TessBaseAPIGetUTF8Text(tess);
     if (ocr_text_ptr == null) {
@@ -759,13 +775,16 @@ export fn ddac_free(handle: ?*anyopaque) void {
 
 /// Parse a document. Detects format from extension, dispatches to the right
 /// C library, writes extracted content to output_path, returns summary.
+/// After the base parse, runs any enabled processing stages (bitmask).
 ///
 /// output_fmt: 0 = scheme, 1 = json, 2 = csv (controls output formatting)
+/// stage_flags: bitmask of DDAC_STAGE_* flags (0 = no extra stages)
 export fn ddac_parse(
     handle: ?*anyopaque,
     input_path: ?[*:0]const u8,
     output_path: ?[*:0]const u8,
     output_fmt: c_int,
+    stage_flags: u64,
 ) ParseResult {
     _ = output_fmt; // format selection handled by Chapel's ShardedOutput
 
@@ -812,10 +831,11 @@ export fn ddac_parse(
     const start = nowMs();
 
     // Detect content type and dispatch
+    var captured = CapturedData{};
     const kind = detectKind(in_path);
     switch (kind) {
         .pdf => parsePdf(in_path, out_path, &result),
-        .image => parseImage(in_path, out_path, state, &result),
+        .image => parseImage(in_path, out_path, state, &result, &captured),
         .audio => parseAudio(in_path, out_path, &result),
         .video => parseVideo(in_path, out_path, &result),
         .epub => parseEpub(in_path, out_path, &result),
@@ -828,6 +848,26 @@ export fn ddac_parse(
     }
 
     result.parse_time_ms = nowMs() - start;
+
+    // Run processing stages (only if base parse succeeded and stages requested)
+    if (stage_flags != 0 and result.status == 0) {
+        const stage_ctx = stages.StageContext{
+            .stages = stage_flags,
+            .input_path = in_path,
+            .output_path = out_path,
+            .content_kind = result.content_kind,
+            .sha256 = &result.sha256,
+            .mime_type = &result.mime_type,
+            .page_count = result.page_count,
+            .word_count = result.word_count,
+            .char_count = result.char_count,
+            .duration_sec = result.duration_sec,
+            .ocr_confidence = captured.ocr_confidence,
+            .tess_api = if (state.tess_api) |t| @ptrCast(t) else null,
+        };
+        stages.runStages(stage_ctx);
+    }
+
     return result;
 }
 

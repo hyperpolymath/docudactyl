@@ -23,7 +23,8 @@
              (gnu packages video)
              (gnu packages xml)
              (gnu packages geo)
-             (gnu packages image-processing))
+             (gnu packages image-processing)
+             (gnu packages databases))
 
 (package
   (name "docudactyl")
@@ -63,4 +64,7 @@ Supports PDF, images (OCR), audio, video, EPUB, and geospatial formats.")
       gdal                      ; libgdal
 
       ;; Image metadata
-      vips)))                   ; libvips
+      vips                      ; libvips
+
+      ;; Result cache
+      lmdb)))                   ; liblmdb (zero-copy key-value store)

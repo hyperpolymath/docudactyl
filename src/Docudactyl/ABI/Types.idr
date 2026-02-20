@@ -337,10 +337,10 @@ namespace Foreign
   %foreign "C:ddac_init, libdocudactyl_ffi"
   prim__init : PrimIO Bits64
 
-  ||| Raw FFI: ddac_parse
+  ||| Raw FFI: ddac_parse (5 args: handle, input, output, fmt, stages)
   export
   %foreign "C:ddac_parse, libdocudactyl_ffi"
-  prim__parse : Bits64 -> Bits64 -> Bits64 -> Bits64 -> PrimIO Bits64
+  prim__parse : Bits64 -> Bits64 -> Bits64 -> Bits64 -> Bits64 -> PrimIO Bits64
 
   ||| Safe wrapper: initialise library
   export
