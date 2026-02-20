@@ -64,6 +64,7 @@ ffi/zig/zig-out/
 
 # HPC output
 /output/
+/output-*/
 
 # Secrets
 .env

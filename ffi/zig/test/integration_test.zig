@@ -26,7 +26,8 @@ test "create and destroy handle" {
     const handle = ddac_init() orelse return error.InitFailed;
     defer ddac_free(handle);
 
-    try testing.expect(handle != null);
+    // If we got here, handle is non-null (orelse would have returned)
+    try testing.expect(@intFromPtr(handle) != 0);
 }
 
 test "free null is safe" {

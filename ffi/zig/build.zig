@@ -65,6 +65,33 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&run_lib_tests.step);
 
+    // ── Integration tests (test/integration_test.zig) ─────────────
+    // These test the C ABI by calling exported ddac_* functions via
+    // extern fn — they link against the built shared library.
+    const integ_module = b.createModule(.{
+        .root_source_file = b.path("test/integration_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    linkCLibrariesOnModule(integ_module);
+    // Link the FFI library itself so extern fn ddac_* symbols resolve
+    integ_module.addLibraryPath(lib.getEmittedBinDirectory());
+    integ_module.addRPath(lib.getEmittedBinDirectory());
+    integ_module.linkLibrary(lib);
+
+    const integ_tests = b.addTest(.{
+        .root_module = integ_module,
+    });
+
+    const run_integ_tests = b.addRunArtifact(integ_tests);
+    run_integ_tests.step.dependOn(&lib.step); // ensure lib is built first
+    const integ_step = b.step("test-integration", "Run integration tests (C ABI)");
+    integ_step.dependOn(&run_integ_tests.step);
+
+    // Make `zig build test` run both unit and integration tests
+    test_step.dependOn(&run_integ_tests.step);
+
     // ── Documentation ───────────────────────────────────────────────
     const docs_module = b.createModule(.{
         .root_source_file = b.path("src/docudactyl_ffi.zig"),

@@ -1,0 +1,9 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Docudactyl ABI proof package
+package docudactyl
+
+sourcedir = "src"
+
+modules = Docudactyl.ABI.Types
+        , Docudactyl.ABI.Layout
+        , Docudactyl.ABI.Foreign

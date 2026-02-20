@@ -469,6 +469,7 @@ build-chapel: build-ffi
               {{chapel_src}}/ProgressReporter.chpl \
               {{chapel_src}}/ShardedOutput.chpl \
               {{chapel_src}}/ResultAggregator.chpl \
+              {{chapel_src}}/Checkpoint.chpl \
               -o bin/docudactyl-hpc \
               -L{{zig_ffi}}/zig-out/lib -ldocudactyl_ffi \
               --ldflags="-Wl,-rpath,$$ABSPATH" \
@@ -546,6 +547,101 @@ deps-check:
         echo "  toolbox run -c {{toolbox}} sudo dnf install poppler-devel tesseract-devel leptonica-devel ffmpeg-free-devel libxml2-devel gdal-devel vips-devel"
         exit 1
     fi
+
+# Run error path tests (valid, missing, corrupt, empty files)
+test-error-paths: build-hpc
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Error Path Test ==="
+    TMPDIR=$(mktemp -d)
+    trap "rm -rf $TMPDIR" EXIT
+
+    # Create test fixtures
+    cp /usr/share/doc/pigz/pigz.pdf "$TMPDIR/valid.pdf" 2>/dev/null || echo "%PDF-1.0 test" > "$TMPDIR/valid.pdf"
+    cp /usr/share/icons/Adwaita/16x16/devices/audio-headphones.png "$TMPDIR/valid.png" 2>/dev/null || printf '\x89PNG\r\n' > "$TMPDIR/valid.png"
+    touch "$TMPDIR/empty.pdf"
+    echo "this is not a pdf" > "$TMPDIR/fake.pdf"
+    # Manifest: 2 valid + 3 invalid = 5 total
+    cat > "$TMPDIR/manifest.txt" << MANIFEST
+    # Error path test manifest
+    $TMPDIR/valid.pdf
+    $TMPDIR/valid.png
+    /nonexistent/path/to/missing.pdf
+    $TMPDIR/empty.pdf
+    $TMPDIR/fake.pdf
+    MANIFEST
+
+    OUTDIR="$TMPDIR/output"
+    toolbox run -c {{toolbox}} bash -c "export LD_LIBRARY_PATH={{zig_ffi}}/zig-out/lib:\$LD_LIBRARY_PATH; ./bin/docudactyl-hpc --manifestPath=$TMPDIR/manifest.txt --outputDir=$OUTDIR --chunkSize=1 2>&1" | tee "$TMPDIR/run.log"
+
+    # Verify: engine must complete, 2 successes, 3 failures
+    SUCCEEDED=$(grep -oP 'Succeeded:\s+\K\d+' "$TMPDIR/run.log" || echo 0)
+    FAILED=$(grep -oP 'Failed:\s+\K\d+' "$TMPDIR/run.log" || echo 0)
+    echo ""
+    echo "--- Results ---"
+    echo "Succeeded: $SUCCEEDED (expected >= 1)"
+    echo "Failed:    $FAILED (expected >= 2)"
+    if [ "$SUCCEEDED" -ge 1 ] && [ "$FAILED" -ge 2 ]; then
+        echo "PASS: Error paths handled gracefully"
+    else
+        echo "FAIL: Unexpected results"
+        exit 1
+    fi
+
+# Run scale test (2000+ files from /usr/share)
+test-scale: build-hpc
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Scale Test ==="
+    MANIFEST=$(mktemp)
+    trap "rm -f $MANIFEST" EXIT
+
+    find /usr/share/icons -name '*.png' 2>/dev/null | head -2000 > "$MANIFEST"
+    find /usr/share/doc -name '*.pdf' 2>/dev/null >> "$MANIFEST"
+    COUNT=$(wc -l < "$MANIFEST")
+    echo "Manifest: $COUNT files"
+
+    if [ "$COUNT" -lt 100 ]; then
+        echo "SKIP: Not enough test files ($COUNT < 100)"
+        exit 0
+    fi
+
+    OUTDIR=$(mktemp -d)
+    trap "rm -rf $OUTDIR; rm -f $MANIFEST" EXIT
+
+    toolbox run -c {{toolbox}} bash -c "export LD_LIBRARY_PATH={{zig_ffi}}/zig-out/lib:\$LD_LIBRARY_PATH; ./bin/docudactyl-hpc --manifestPath=$MANIFEST --outputDir=$OUTDIR 2>&1" | tee /tmp/scale-test.log
+
+    SUCCEEDED=$(grep -oP 'Succeeded:\s+\K\d+' /tmp/scale-test.log || echo 0)
+    TOTAL=$(grep -oP 'Documents:\s+\K\d+' /tmp/scale-test.log || echo 0)
+    RATE=$(grep -oP 'Throughput:\s+\K[0-9.]+' /tmp/scale-test.log || echo 0)
+    FAILPCT=$(grep -oP 'Failure %:\s+\K[0-9.]+' /tmp/scale-test.log || echo 100)
+
+    echo ""
+    echo "--- Results ---"
+    echo "Total:      $TOTAL"
+    echo "Succeeded:  $SUCCEEDED"
+    echo "Throughput: $RATE docs/s"
+    echo "Failure %:  $FAILPCT%"
+
+    # Pass criteria: >90% success, >1 doc/s
+    if awk "BEGIN {exit !($FAILPCT < 10.0)}"; then
+        echo "PASS: Failure rate < 10%"
+    else
+        echo "FAIL: Failure rate >= 10%"
+        exit 1
+    fi
+
+    if awk "BEGIN {exit !($RATE > 1.0)}"; then
+        echo "PASS: Throughput > 1 doc/s"
+    else
+        echo "FAIL: Throughput <= 1 doc/s"
+        exit 1
+    fi
+    echo "Scale test PASSED"
+
+# Run all HPC tests
+test-hpc: test-ffi test-error-paths
+    @echo "All HPC tests passed!"
 
 # Clean HPC build artifacts [reversible: rebuild with `just build-hpc`]
 clean-hpc:

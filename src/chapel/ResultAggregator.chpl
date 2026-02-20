@@ -170,6 +170,49 @@ module ResultAggregator {
     writeln();
   }
 
+  /** Write a machine-readable JSON report (for automated monitoring). */
+  proc writeJSONReport(const ref g: GlobalStats, path: string) {
+    try {
+      var f = open(path, ioMode.cw);
+      var w = f.writer(locking=false);
+
+      w.writeln("{");
+      w.writeln("  \"generator\": \"docudactyl-hpc\",");
+      w.writeln("  \"locales\": ", numLocales, ",");
+      w.writeln("  \"wallClockSec\": ", g.wallClockSec, ",");
+      w.writeln("  \"throughputDocsPerSec\": ",
+                if g.wallClockSec > 0 then g.totalDocs:real / g.wallClockSec else 0.0, ",");
+      w.writeln("  \"summary\": {");
+      w.writeln("    \"totalDocs\": ", g.totalDocs, ",");
+      w.writeln("    \"succeeded\": ", g.successDocs, ",");
+      w.writeln("    \"failed\": ", g.failedDocs);
+      w.writeln("  },");
+      w.writeln("  \"contentBreakdown\": {");
+      w.writeln("    \"pdf\": ", g.pdfCount, ",");
+      w.writeln("    \"image\": ", g.imageCount, ",");
+      w.writeln("    \"audio\": ", g.audioCount, ",");
+      w.writeln("    \"video\": ", g.videoCount, ",");
+      w.writeln("    \"epub\": ", g.epubCount, ",");
+      w.writeln("    \"geospatial\": ", g.geoCount, ",");
+      w.writeln("    \"unknown\": ", g.unknownCount);
+      w.writeln("  },");
+      w.writeln("  \"extracted\": {");
+      w.writeln("    \"pages\": ", g.totalPages, ",");
+      w.writeln("    \"words\": ", g.totalWords, ",");
+      w.writeln("    \"characters\": ", g.totalChars, ",");
+      w.writeln("    \"avDurationSec\": ", g.totalDurationSec);
+      w.writeln("  },");
+      w.writeln("  \"cumulativeParseMs\": ", g.totalParseTimeMs);
+      w.writeln("}");
+
+      w.close();
+      f.close();
+      writeln("[report] JSON written to ", path);
+    } catch e: Error {
+      writeln("[report] ERROR: Could not write JSON report to ", path, ": ", e.message());
+    }
+  }
+
   /** Write a machine-readable Scheme report to a file. */
   proc writeReport(const ref g: GlobalStats, path: string) {
     try {

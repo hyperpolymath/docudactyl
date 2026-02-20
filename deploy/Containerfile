@@ -1,0 +1,76 @@
+# Docudactyl HPC Engine — Container Image
+#
+# Multi-stage build: compile Zig FFI + Chapel binary, then copy to runtime image.
+# Runtime: Wolfi-based (Chainguard) with only the C library shared objects needed.
+#
+# Build:  podman build -f deploy/Containerfile -t docudactyl-hpc .
+# Run:    podman run --rm -v /data/manifest.txt:/manifest.txt:ro \
+#                        -v /data/output:/output \
+#                        docudactyl-hpc --manifestPath=/manifest.txt
+#
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
+
+# ── Stage 1: Build ──────────────────────────────────────────────────
+FROM registry.fedoraproject.org/fedora:43 AS builder
+
+# Install build tools
+RUN dnf install -y \
+    zig chapel \
+    poppler-devel glib2-devel \
+    tesseract-devel leptonica-devel \
+    libxml2-devel gdal-devel vips-devel \
+    && dnf clean all
+
+# Install FFmpeg from RPM Fusion
+RUN dnf install -y \
+    "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-43.noarch.rpm" \
+    && dnf install -y ffmpeg-free-devel \
+    && dnf clean all
+
+WORKDIR /build
+COPY ffi/zig/ ffi/zig/
+COPY src/chapel/ src/chapel/
+
+# Build Zig FFI
+RUN cd ffi/zig && zig build -Doptimize=ReleaseFast
+
+# Build Chapel binary
+RUN mkdir -p bin && \
+    ABSPATH=$(cd ffi/zig/zig-out/lib && pwd) && \
+    chpl src/chapel/DocudactylHPC.chpl \
+         src/chapel/Config.chpl \
+         src/chapel/ContentType.chpl \
+         src/chapel/FFIBridge.chpl \
+         src/chapel/ManifestLoader.chpl \
+         src/chapel/FaultHandler.chpl \
+         src/chapel/ProgressReporter.chpl \
+         src/chapel/ShardedOutput.chpl \
+         src/chapel/ResultAggregator.chpl \
+         src/chapel/Checkpoint.chpl \
+         -o bin/docudactyl-hpc \
+         -Lffi/zig/zig-out/lib -ldocudactyl_ffi \
+         --ldflags="-Wl,-rpath,/usr/local/lib" \
+         --fast
+
+# ── Stage 2: Runtime ────────────────────────────────────────────────
+FROM cgr.dev/chainguard/wolfi-base:latest
+
+# Install only runtime libraries (no -devel headers)
+RUN apk add --no-cache \
+    poppler-glib glib \
+    tesseract-ocr leptonica \
+    ffmpeg-libs \
+    libxml2 gdal vips \
+    tesseract-ocr-eng
+
+# Copy built artifacts
+COPY --from=builder /build/bin/docudactyl-hpc /usr/local/bin/
+COPY --from=builder /build/ffi/zig/zig-out/lib/libdocudactyl_ffi.so* /usr/local/lib/
+
+# Default output directory
+RUN mkdir -p /output
+VOLUME ["/output"]
+
+ENTRYPOINT ["docudactyl-hpc"]
+CMD ["--outputDir=/output"]

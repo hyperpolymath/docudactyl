@@ -21,6 +21,7 @@ use FaultHandler;
 use ProgressReporter;
 use ShardedOutput;
 use ResultAggregator;
+use Checkpoint;
 use DynamicIters;
 use Time;
 use CTypes;
@@ -63,6 +64,10 @@ proc main() throws {
   initShards();
   resetStats();
   resetFaultCounters();
+
+  // ── Resume from checkpoint if --resume is set ─────────────────────
+  loadCheckpoint();
+
   initProgress(totalDocs);
 
   // ── Start timer and background progress reporter ──────────────────
@@ -88,6 +93,12 @@ proc main() throws {
       continue;
     }
 
+    // Skip if already processed in a previous run (--resume)
+    if isAlreadyProcessed(idx) {
+      recordCompletion();
+      continue;
+    }
+
     // Check for abort before processing
     if shouldAbort() {
       recordCompletion();
@@ -100,6 +111,11 @@ proc main() throws {
     var result = safeParse(handle, inputPath, outPath, fmtCode);
     accumulate(result);
     recordCompletion();
+
+    // Record checkpoint for resume capability
+    if parseSucceeded(result) {
+      try { recordCheckpoint(idx); } catch { }
+    }
   }
 
   // ── Finalise ──────────────────────────────────────────────────────
@@ -113,9 +129,18 @@ proc main() throws {
   var report = computeGlobal(timer.elapsed());
   printReport(report);
   writeReport(report, outputDir + "/run-report.scm");
+  writeJSONReport(report, outputDir + "/run-report.json");
+
+  // Save final checkpoint (for resume if needed later)
+  try { flushAllCheckpoints(); } catch { }
 
   // Optional: merge shards into single directory
   mergeAllShards();
+
+  // Clear checkpoint files on successful completion
+  if report.failedDocs == 0 {
+    try { clearCheckpoints(); } catch { }
+  }
 
   writeln("[done] Docudactyl HPC complete.");
 }
