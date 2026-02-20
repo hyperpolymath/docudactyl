@@ -461,6 +461,7 @@ build-chapel: build-ffi
     @echo "Building Chapel HPC engine..."
     @mkdir -p bin
     toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && \
+         ABSPATH=$$(cd {{zig_ffi}}/zig-out/lib && pwd) && \
          chpl {{chapel_src}}/DocudactylHPC.chpl \
               {{chapel_src}}/Config.chpl \
               {{chapel_src}}/ContentType.chpl \
@@ -472,6 +473,7 @@ build-chapel: build-ffi
               {{chapel_src}}/ResultAggregator.chpl \
               -o bin/docudactyl-hpc \
               -L{{zig_ffi}}/zig-out/lib -ldocudactyl_ffi \
+              --ldflags="-Wl,-rpath,$$ABSPATH" \
               --fast'
 
 # Build complete HPC stack (FFI + Chapel)
@@ -480,11 +482,11 @@ build-hpc: build-ffi build-chapel
 
 # Run HPC engine on a manifest (single locale)
 run-hpc manifest *args:
-    toolbox run -c {{toolbox}} bash -c 'export LD_LIBRARY_PATH="{{zig_ffi}}/zig-out/lib:$$LD_LIBRARY_PATH" && bin/docudactyl-hpc --manifestPath={{manifest}} {{args}}'
+    toolbox run -c {{toolbox}} bash -c 'bin/docudactyl-hpc --manifestPath={{manifest}} {{args}}'
 
 # Run HPC engine on a cluster (multiple locales)
 run-hpc-cluster manifest locales="64" *args:
-    toolbox run -c {{toolbox}} bash -c 'export LD_LIBRARY_PATH="{{zig_ffi}}/zig-out/lib:$$LD_LIBRARY_PATH" && bin/docudactyl-hpc --manifestPath={{manifest}} -nl {{locales}} {{args}}'
+    toolbox run -c {{toolbox}} bash -c 'bin/docudactyl-hpc --manifestPath={{manifest}} -nl {{locales}} {{args}}'
 
 # Generate a manifest file from a directory of documents
 generate-manifest dir output="manifest.txt":

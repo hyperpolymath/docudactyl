@@ -234,6 +234,10 @@ fn parsePdf(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *Pars
     result.status = 0;
 }
 
+/// Minimum image dimension for OCR (pixels). Images smaller than this
+/// in either dimension are too small for Tesseract to produce useful text.
+const MIN_OCR_DIMENSION: c_int = 10;
+
 /// Image: OCR via Tesseract + dimensions via libvips
 fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *HandleState, result: *ParseResult) void {
     result.content_kind = @intFromEnum(ContentKind.image);
@@ -252,6 +256,38 @@ fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *Han
         return;
     }
     defer c.pixDestroy(@constCast(&pix));
+
+    // Check minimum dimensions — tiny images (icons, spacers) produce
+    // only Tesseract warnings and no useful OCR text
+    const img_w = c.pixGetWidth(pix);
+    const img_h = c.pixGetHeight(pix);
+    if (img_w < MIN_OCR_DIMENSION or img_h < MIN_OCR_DIMENSION) {
+        // Write an empty output file and succeed with zero words
+        const out_file = std.fs.createFileAbsoluteZ(output_path, .{}) catch {
+            copyToFixed(256, &result.error_msg, "Cannot create output file");
+            result.status = 1;
+            return;
+        };
+        out_file.close();
+        result.page_count = 1;
+        result.word_count = 0;
+        result.char_count = 0;
+
+        // Detect MIME from extension
+        const path_str = std.mem.span(input_path);
+        if (std.mem.endsWith(u8, path_str, ".png")) {
+            copyToFixed(64, &result.mime_type, "image/png");
+        } else if (std.mem.endsWith(u8, path_str, ".jpg") or std.mem.endsWith(u8, path_str, ".jpeg")) {
+            copyToFixed(64, &result.mime_type, "image/jpeg");
+        } else if (std.mem.endsWith(u8, path_str, ".tiff") or std.mem.endsWith(u8, path_str, ".tif")) {
+            copyToFixed(64, &result.mime_type, "image/tiff");
+        } else {
+            copyToFixed(64, &result.mime_type, "image/unknown");
+        }
+
+        result.status = 0;
+        return;
+    }
 
     c.TessBaseAPISetImage2(tess, pix);
     if (c.TessBaseAPIRecognize(tess, null) != 0) {
@@ -297,20 +333,33 @@ fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *Han
     result.status = 0;
 }
 
+/// Format an FFmpeg error code into a human-readable message
+fn avErrorMsg(errnum: c_int, dest: *[256]u8) void {
+    var buf: [256]u8 = undefined;
+    if (c.av_strerror(errnum, &buf, 256) == 0) {
+        const msg = std.mem.sliceTo(&buf, 0);
+        copyToFixed(256, dest, msg);
+    } else {
+        copyToFixed(256, dest, "Unknown FFmpeg error");
+    }
+}
+
 /// Audio: metadata + duration via FFmpeg (libavformat)
 fn parseAudio(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *ParseResult) void {
     result.content_kind = @intFromEnum(ContentKind.audio);
 
     var fmt_ctx: ?*c.AVFormatContext = null;
-    if (c.avformat_open_input(&fmt_ctx, input_path, null, null) < 0) {
-        copyToFixed(256, &result.error_msg, "Cannot open audio file");
+    const open_err = c.avformat_open_input(&fmt_ctx, input_path, null, null);
+    if (open_err < 0) {
+        avErrorMsg(open_err, &result.error_msg);
         result.status = 2;
         return;
     }
     defer c.avformat_close_input(&fmt_ctx);
 
-    if (c.avformat_find_stream_info(fmt_ctx, null) < 0) {
-        copyToFixed(256, &result.error_msg, "Cannot find stream info");
+    const stream_err = c.avformat_find_stream_info(fmt_ctx, null);
+    if (stream_err < 0) {
+        avErrorMsg(stream_err, &result.error_msg);
         result.status = 2;
         return;
     }
@@ -370,15 +419,17 @@ fn parseVideo(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *Pa
     result.content_kind = @intFromEnum(ContentKind.video);
 
     var fmt_ctx: ?*c.AVFormatContext = null;
-    if (c.avformat_open_input(&fmt_ctx, input_path, null, null) < 0) {
-        copyToFixed(256, &result.error_msg, "Cannot open video file");
+    const open_err = c.avformat_open_input(&fmt_ctx, input_path, null, null);
+    if (open_err < 0) {
+        avErrorMsg(open_err, &result.error_msg);
         result.status = 2;
         return;
     }
     defer c.avformat_close_input(&fmt_ctx);
 
-    if (c.avformat_find_stream_info(fmt_ctx, null) < 0) {
-        copyToFixed(256, &result.error_msg, "Cannot find stream info");
+    const stream_err = c.avformat_find_stream_info(fmt_ctx, null);
+    if (stream_err < 0) {
+        avErrorMsg(stream_err, &result.error_msg);
         result.status = 2;
         return;
     }
@@ -448,8 +499,17 @@ fn parseEpub(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *Par
     // Here we use libxml2 to parse the file if it's an unzipped XHTML.
     const doc = c.xmlReadFile(input_path, null, c.XML_PARSE_RECOVER | c.XML_PARSE_NOERROR);
     if (doc == null) {
-        // Try as plain XML/XHTML
-        copyToFixed(256, &result.error_msg, "Cannot parse EPUB/XHTML content");
+        // Capture libxml2 error if available
+        const xml_err = c.xmlGetLastError();
+        if (xml_err) |e| {
+            if (e.*.message) |msg| {
+                copyToFixed(256, &result.error_msg, std.mem.span(msg));
+            } else {
+                copyToFixed(256, &result.error_msg, "Cannot parse EPUB/XHTML content");
+            }
+        } else {
+            copyToFixed(256, &result.error_msg, "Cannot parse EPUB/XHTML content");
+        }
         result.status = 2;
         return;
     }
@@ -504,7 +564,18 @@ fn parseGeo(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *Pars
 
     const dataset = c.GDALOpen(input_path, c.GA_ReadOnly);
     if (dataset == null) {
-        copyToFixed(256, &result.error_msg, "Cannot open geospatial file");
+        // Capture GDAL's last error message
+        const gdal_msg = c.CPLGetLastErrorMsg();
+        if (gdal_msg) |msg| {
+            const msg_str = std.mem.span(msg);
+            if (msg_str.len > 0) {
+                copyToFixed(256, &result.error_msg, msg_str);
+            } else {
+                copyToFixed(256, &result.error_msg, "Cannot open geospatial file");
+            }
+        } else {
+            copyToFixed(256, &result.error_msg, "Cannot open geospatial file");
+        }
         result.status = 2;
         return;
     }
@@ -675,8 +746,22 @@ export fn ddac_parse(
         return result;
     };
 
-    // Compute SHA-256
+    // Early existence check — produce a clear FileNotFound error
+    // rather than letting each parser fail with a cryptic message
     const in_slice = std.mem.span(in_path);
+    std.fs.accessAbsolute(in_slice, .{}) catch {
+        result.status = 2; // FileNotFound
+        copyToFixed(256, &result.error_msg, "File not found: ");
+        // Append as much of the path as fits
+        const prefix_len = std.mem.len(@as([*:0]const u8, @ptrCast(&result.error_msg)));
+        const remaining = 255 - prefix_len;
+        const path_len = @min(in_slice.len, remaining);
+        @memcpy(result.error_msg[prefix_len .. prefix_len + path_len], in_slice[0..path_len]);
+        result.error_msg[prefix_len + path_len] = 0;
+        return result;
+    };
+
+    // Compute SHA-256
     _ = computeSha256(in_slice, &result.sha256);
 
     // Time the parse

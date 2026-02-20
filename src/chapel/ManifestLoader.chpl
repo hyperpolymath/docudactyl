@@ -45,6 +45,7 @@ module ManifestLoader {
     const pathDom = {0..#lineCount} dmapped new blockDist({0..#lineCount});
     var docPaths: [pathDom] string;
 
+    var actualCount = 0;
     {
       var f = open(manifestPath, ioMode.r);
       var reader = f.reader(locking=false);
@@ -53,10 +54,47 @@ module ManifestLoader {
       while reader.readLine(line) {
         const trimmed = line.strip();
         if trimmed.size > 0 && !trimmed.startsWith("#") {
-          docPaths[idx] = trimmed;
-          idx += 1;
+          if idx < lineCount {
+            docPaths[idx] = trimmed;
+            idx += 1;
+          }
         }
       }
+      actualCount = idx;
+    }
+
+    // If actual count differs from pass-1 count (e.g. file changed
+    // between passes, or encoding edge case), use the smaller value
+    if actualCount < lineCount {
+      writeln("[manifest] Note: ", lineCount - actualCount,
+              " fewer paths read in pass 2 (", actualCount, " vs ", lineCount,
+              "); using ", actualCount, " paths");
+      // Re-create array with correct size
+      const fixedDom = {0..#actualCount} dmapped new blockDist({0..#actualCount});
+      var fixedPaths: [fixedDom] string;
+      forall i in fixedDom do fixedPaths[i] = docPaths[i];
+
+      // ── Validation: sample 0.1% of paths for existence ──────────
+      const fixedSampleSize = max(1, actualCount / 1000);
+      var fixedRng = new randomStream(int);
+      var fixedExistCount = 0;
+      var fixedCheckCount = 0;
+
+      for i in 0..#fixedSampleSize {
+        const sampleIdx = fixedRng.next(0, actualCount - 1);
+        if exists(fixedPaths[sampleIdx]) then
+          fixedExistCount += 1;
+        fixedCheckCount += 1;
+      }
+
+      const fixedExistPct = if fixedCheckCount > 0 then (fixedExistCount: real / fixedCheckCount: real) * 100.0 else 0.0;
+      writeln("[manifest] Validation sample: ", fixedCheckCount, " checked, ",
+              fixedExistPct:string, "% exist on locale 0");
+
+      if fixedExistPct < 50.0 then
+        writeln("[manifest] WARNING: <50% of sampled paths exist — check manifest correctness");
+
+      return fixedPaths;
     }
 
     // ── Validation: sample 0.1% of paths for existence ──────────────
