@@ -9,8 +9,11 @@
 module FFIBridge {
   use CTypes;
 
+  // Pull in the C header so Chapel knows the struct layout
+  require "../../ffi/zig/include/docudactyl_ffi.h";
+
   // ── Result struct ─────────────────────────────────────────────────────
-  // Must match ddac_parse_result_t in docudactyl_ffi.zig exactly.
+  // Must match ddac_parse_result_t in docudactyl_ffi.h / docudactyl_ffi.zig.
   // All fixed-size fields, no heap pointers.
 
   extern record ddac_parse_result_t {

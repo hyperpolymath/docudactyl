@@ -19,8 +19,9 @@ const std = @import("std");
 const c = @cImport({
     // Poppler (PDF)
     @cInclude("poppler/glib/poppler.h");
-    // Tesseract (OCR)
+    // Tesseract (OCR) + Leptonica (image I/O)
     @cInclude("tesseract/capi.h");
+    @cInclude("leptonica/allheaders.h");
     // FFmpeg (audio/video)
     @cInclude("libavformat/avformat.h");
     @cInclude("libavutil/dict.h");
@@ -507,7 +508,7 @@ fn parseGeo(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *Pars
         result.status = 2;
         return;
     }
-    defer c.GDALClose(dataset);
+    defer _ = c.GDALClose(dataset);
 
     // Get projection
     const proj = c.GDALGetProjectionRef(dataset);

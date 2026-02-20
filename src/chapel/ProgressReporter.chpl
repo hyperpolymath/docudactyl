@@ -61,8 +61,10 @@ module ProgressReporter {
       const eta = if rate > 0.0 then remaining: real / rate else 0.0;
       const failures = localeFailureCount.read();
 
-      writef("[%7.1drs] %d/%d (%5.1dr%%) | %6.1dr docs/s | ETA %7.1drs | %d failures\n",
-             elapsed, done, totalDocs, pct, rate, eta, failures);
+      writeln("[", elapsed:string, "s] ",
+              done, "/", totalDocs, " (", pct:string, "%) | ",
+              rate:string, " docs/s | ETA ", eta:string, "s | ",
+              failures, " failures");
 
       // Check for abort condition
       if shouldAbort() {
@@ -77,8 +79,8 @@ module ProgressReporter {
     const elapsed = timer.elapsed();
     const pct = if totalDocs > 0 then (done: real / totalDocs: real) * 100.0 else 100.0;
     const rate = if elapsed > 0.0 then done: real / elapsed else 0.0;
-    writef("[DONE ] %d/%d (%5.1dr%%) in %7.1drs (%6.1dr docs/s)\n",
-           done, totalDocs, pct, elapsed, rate);
+    writeln("[DONE ] ", done, "/", totalDocs, " (", pct:string, "%) in ",
+            elapsed:string, "s (", rate:string, " docs/s)");
   }
 
   /** Format a duration in seconds to human-readable HH:MM:SS. */

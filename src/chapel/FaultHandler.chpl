@@ -11,7 +11,6 @@ module FaultHandler {
   use FFIBridge;
   use Config;
   use CTypes;
-  use AtomicAggregates;
 
   // ── Per-locale failure tracking ───────────────────────────────────────
 

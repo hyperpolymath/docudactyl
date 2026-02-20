@@ -10,14 +10,14 @@ module ContentType {
 
   /** Content kinds supported by the HPC pipeline.
       Integer values must match Zig's ContentKind enum. */
-  enum ContentKind : int {
-    PDF        = 0,
-    Image      = 1,
-    Audio      = 2,
-    Video      = 3,
-    EPUB       = 4,
-    GeoSpatial = 5,
-    Unknown    = 6
+  enum ContentKind {
+    PDF,         // = 0
+    Image,       // = 1
+    Audio,       // = 2
+    Video,       // = 3
+    EPUB,        // = 4
+    GeoSpatial,  // = 5
+    Unknown      // = 6
   }
 
   /** Return a human-readable label for a content kind. */

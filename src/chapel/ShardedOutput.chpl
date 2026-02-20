@@ -16,7 +16,7 @@ module ShardedOutput {
 
   /** Create output shard directories on all locales.
       Creates: outputDir/shard-0/, outputDir/shard-1/, ... */
-  proc initShards() {
+  proc initShards() throws {
     coforall loc in Locales do on loc {
       const shardPath = shardDir(loc.id);
       if !exists(shardPath) then
@@ -50,12 +50,13 @@ module ShardedOutput {
     const stem = if dotPos > 0 then base[0..#dotPos] else base;
 
     // Choose extension based on output format
-    const ext = select outputFormat {
-      when "scheme" do ".scm";
-      when "json"   do ".json";
-      when "csv"    do ".csv";
-      otherwise     do ".txt";
-    };
+    var ext: string;
+    select outputFormat {
+      when "scheme" do ext = ".scm";
+      when "json"   do ext = ".json";
+      when "csv"    do ext = ".csv";
+      otherwise     do ext = ".txt";
+    }
 
     return shardDir(here.id) + "/" + stem + ext;
   }
@@ -65,7 +66,7 @@ module ShardedOutput {
   /** Merge all shard directories into a single output directory.
       This is optional and runs after the forall loop completes.
       Only runs on locale 0 for simplicity. */
-  proc mergeAllShards() {
+  proc mergeAllShards() throws {
     if numLocales == 1 {
       writeln("[shards] Single locale — no merge needed");
       return;
@@ -99,7 +100,7 @@ module ShardedOutput {
   }
 
   /** Count total output files across all shards. */
-  proc totalOutputFiles(): int {
+  proc totalOutputFiles(): int throws {
     var count = 0;
     for locId in 0..#numLocales {
       const shard = shardDir(locId);

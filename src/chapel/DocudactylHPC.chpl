@@ -50,7 +50,7 @@ proc main() throws {
   // ── Start timer and background progress reporter ──────────────────
   var timer: stopwatch;
   timer.start();
-  begin reportLoop(timer);
+  begin with (ref timer) reportLoop(timer);
 
   // ── Main processing loop ──────────────────────────────────────────
   // Dynamic iteration: Chapel distributes chunks across locales,

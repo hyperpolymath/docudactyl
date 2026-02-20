@@ -38,14 +38,11 @@ module ResultAggregator {
   }
 
   /** Per-locale stats storage. Each locale writes only to its own slot. */
-  var perLocaleStats: [LocaleIdsRange] LocaleStats;
-
-  // Helper to get locale IDs range
-  proc LocaleIdsRange return 0..#numLocales;
+  var perLocaleStats: [0..#numLocales] LocaleStats;
 
   /** Reset all per-locale stats (call at start of run). */
   proc resetStats() {
-    for i in LocaleIdsRange do
+    for i in 0..#numLocales do
       perLocaleStats[i] = new LocaleStats();
   }
 
@@ -107,7 +104,7 @@ module ResultAggregator {
     var g = new GlobalStats();
     g.wallClockSec = wallClockSec;
 
-    for i in LocaleIdsRange {
+    for i in 0..#numLocales {
       const ref s = perLocaleStats[i];
       g.totalDocs += s.totalDocs;
       g.successDocs += s.successDocs;
