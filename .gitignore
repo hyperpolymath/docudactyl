@@ -58,6 +58,13 @@ __pycache__/
 # Chapel
 *.chpl.tmp.*
 
+# Zig
+ffi/zig/.zig-cache/
+ffi/zig/zig-out/
+
+# HPC output
+/output/
+
 # Secrets
 .env
 .env.*
