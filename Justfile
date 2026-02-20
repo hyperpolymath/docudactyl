@@ -643,6 +643,129 @@ test-scale: build-hpc
 test-hpc: test-ffi test-error-paths
     @echo "All HPC tests passed!"
 
+# Regenerate C ABI header from Idris2 type definitions
+generate-abi-header:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Generating C ABI header from Idris2 definitions..."
+
+    TYPES="src/Docudactyl/ABI/Types.idr"
+    LAYOUT="src/Docudactyl/ABI/Layout.idr"
+    OUT="generated/abi/docudactyl_ffi.h"
+    mkdir -p "$(dirname "$OUT")"
+
+    # Extract enums from Types.idr
+    # ContentKind: lines with contentKindToInt X = N
+    declare -A CK_MAP
+    while IFS= read -r line; do
+        if [[ "$line" =~ contentKindToInt\ ([A-Za-z]+)\ *=\ *([0-9]+) ]]; then
+            CK_MAP["${BASH_REMATCH[1]}"]="${BASH_REMATCH[2]}"
+        fi
+    done < "$TYPES"
+
+    # ParseStatus: lines with parseStatusToInt X = N
+    declare -A PS_MAP
+    while IFS= read -r line; do
+        if [[ "$line" =~ parseStatusToInt\ ([A-Za-z]+)\ *=\ *([0-9]+) ]]; then
+            PS_MAP["${BASH_REMATCH[1]}"]="${BASH_REMATCH[2]}"
+        fi
+    done < "$TYPES"
+
+    # Extract struct size from Layout.idr (parseResultAligned : Divides 8 NNNNN)
+    STRUCT_SIZE=$(grep -oP 'Divides 8 \K[0-9]+' "$LAYOUT" | head -1)
+    if [ -z "$STRUCT_SIZE" ]; then
+        echo "ERROR: Could not extract struct size from $LAYOUT"
+        exit 1
+    fi
+
+    # Generate header
+    {
+    printf '/**\n'
+    printf ' * Docudactyl FFI -- C ABI Header\n'
+    printf ' *\n'
+    printf ' * AUTO-GENERATED from Idris2 ABI definitions.\n'
+    printf ' * DO NOT EDIT MANUALLY -- regenerate with: just generate-abi-header\n'
+    printf ' *\n'
+    printf ' * Source: src/Docudactyl/ABI/Types.idr, Layout.idr, Foreign.idr\n'
+    printf ' * Struct size: %s bytes (proven in Layout.idr)\n' "$STRUCT_SIZE"
+    printf ' *\n'
+    printf ' * SPDX-License-Identifier: PMPL-1.0-or-later\n'
+    printf ' * Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>\n'
+    printf ' */\n\n'
+    printf '#ifndef DOCUDACTYL_FFI_H\n'
+    printf '#define DOCUDACTYL_FFI_H\n\n'
+    printf '#include <stdint.h>\n\n'
+    printf '#ifdef __cplusplus\nextern "C" {\n#endif\n\n'
+    printf '/* Content Kind (proven exhaustive and injective: Types.idr) */\n'
+    printf 'enum ddac_content_kind {\n'
+    } > "$OUT"
+
+    # Write ContentKind enum values
+    for name in PDF Image Audio Video EPUB GeoSpatial Unknown; do
+        val="${CK_MAP[$name]:-}"
+        if [ -n "$val" ]; then
+            upper=$(echo "$name" | sed 's/\([a-z]\)\([A-Z]\)/\1_\2/g' | tr '[:lower:]' '[:upper:]')
+            printf '    DDAC_%s = %s,\n' "$upper" "$val" >> "$OUT"
+        fi
+    done
+    # Remove trailing comma from last entry
+    sed -i '$ s/,$//' "$OUT"
+
+    {
+    printf '};\n\n'
+    printf '/* Parse Status (retryable: Error, OutOfMemory -- see Types.idr) */\n'
+    printf 'enum ddac_parse_status {\n'
+    } >> "$OUT"
+
+    for name in Ok Error FileNotFound ParseError NullPointer UnsupportedFormat OutOfMemory; do
+        val="${PS_MAP[$name]:-}"
+        if [ -n "$val" ]; then
+            upper=$(echo "$name" | sed 's/\([a-z]\)\([A-Z]\)/\1_\2/g' | tr '[:lower:]' '[:upper:]')
+            printf '    DDAC_%s = %s,\n' "$upper" "$val" >> "$OUT"
+        fi
+    done
+    sed -i '$ s/,$//' "$OUT"
+
+    {
+    printf '};\n\n'
+    printf '/* Parse Result -- %s bytes, 8-byte aligned (Layout.idr) */\n' "$STRUCT_SIZE"
+    printf 'typedef struct ddac_parse_result_t {\n'
+    printf '    int32_t  status;\n'
+    printf '    int32_t  content_kind;\n'
+    printf '    int32_t  page_count;\n'
+    printf '    int32_t  _pad0;\n'
+    printf '    int64_t  word_count;\n'
+    printf '    int64_t  char_count;\n'
+    printf '    double   duration_sec;\n'
+    printf '    double   parse_time_ms;\n'
+    printf '    char     sha256[65];\n'
+    printf '    char     _pad1[7];\n'
+    printf '    char     error_msg[256];\n'
+    printf '    char     title[256];\n'
+    printf '    char     author[256];\n'
+    printf '    char     mime_type[64];\n'
+    printf '} ddac_parse_result_t;\n\n'
+    printf '_Static_assert(sizeof(ddac_parse_result_t) == %s,\n' "$STRUCT_SIZE"
+    printf '    "ddac_parse_result_t must be %s bytes (Idris2 proof: Layout.idr)");\n' "$STRUCT_SIZE"
+    printf '_Static_assert(_Alignof(ddac_parse_result_t) == 8,\n'
+    printf '    "ddac_parse_result_t must be 8-byte aligned (Idris2 proof: Layout.idr)");\n\n'
+    printf 'void *ddac_init(void);\n'
+    printf 'void  ddac_free(void *handle);\n'
+    printf 'ddac_parse_result_t ddac_parse(void *handle, const char *input_path,\n'
+    printf '                               const char *output_path, int output_fmt);\n'
+    printf 'const char *ddac_version(void);\n\n'
+    printf '#ifdef __cplusplus\n}\n#endif\n\n'
+    printf '#endif /* DOCUDACTYL_FFI_H */\n'
+    } >> "$OUT"
+
+    echo "Generated: $OUT (struct size=$STRUCT_SIZE, ${#CK_MAP[@]} content kinds, ${#PS_MAP[@]} parse statuses)"
+
+    # Verify with gcc
+    if command -v gcc &>/dev/null; then
+        echo "Verifying with gcc..."
+        echo '#include "'"$OUT"'"' | gcc -fsyntax-only -xc - && echo "PASS: static assertions hold"
+    fi
+
 # Clean HPC build artifacts [reversible: rebuild with `just build-hpc`]
 clean-hpc:
     rm -rf bin/docudactyl-hpc
