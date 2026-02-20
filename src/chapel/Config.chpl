@@ -49,6 +49,24 @@ module Config {
       300000 ms = 5 minutes (generous for 1000-page manuscripts). */
   config const timeoutPerDocMs: int = 300000;
 
+  // ── Manifest Format ────────────────────────────────────────────────
+
+  /** Manifest format:
+        "auto"   — detect from first line (default; '{' = NDJSON, else plain)
+        "plain"  — one path per line (original format)
+        "ndjson" — one JSON object per line with pre-computed metadata:
+                   {"path":"/data/book.pdf","size":12345,"mtime":1708000000,"kind":"pdf"}
+      NDJSON manifests eliminate stat() calls and enable smarter scheduling. */
+  config const manifestFormat: string = "auto";
+
+  // ── Streaming Output ──────────────────────────────────────────────
+
+  /** Enable NDJSON streaming output (one results.ndjson per shard).
+      When true, appends one JSON line per processed document.
+      More efficient than one-file-per-document for large corpora.
+      Does not replace per-document output — runs alongside it. */
+  config const streamOutput: bool = false;
+
   // ── Multi-Locale / Cluster ─────────────────────────────────────────
 
   /** Manifest loading strategy:
@@ -74,6 +92,55 @@ module Config {
         "write"     - store results but don't read (rebuild cache)
         "readwrite" - full caching (default when cacheDir is set) */
   config const cacheMode: string = "readwrite";
+
+  // ── Preprocessing Conduit ──────────────────────────────────────────
+
+  /** Enable the preprocessing conduit (magic-byte detection, validation,
+      SHA-256 pre-computation).  Runs before each parse to skip invalid
+      files early and pre-populate the L2 cache key.
+      Disable only for benchmarking the raw parse path. */
+  config const conduitEnabled: bool = true;
+
+  // ── ML Inference (ONNX Runtime) ───────────────────────────────────
+
+  /** Enable ONNX Runtime ML inference for ML-dependent stages
+      (NER, Whisper, image classify, layout analysis, handwriting OCR).
+      Requires ONNX Runtime installed and model files in modelDir. */
+  config const mlEnabled: bool = true;
+
+  /** Directory containing ONNX model files.
+      Expected files: ner.onnx, whisper.onnx, image_classify.onnx,
+                      layout_analysis.onnx, handwriting_ocr.onnx */
+  config const modelDir: string = "models/onnx";
+
+  // ── GPU OCR Coprocessor ────────────────────────────────────────────
+
+  /** Enable GPU-accelerated OCR for image documents.
+      Probes for PaddleOCR (CUDA/TensorRT) → Tesseract CUDA → CPU fallback.
+      Images detected by the conduit as ContentKind.Image are batched and
+      dispatched to the GPU instead of single-image CPU Tesseract.
+      Requires conduitEnabled=true for content-type detection. */
+  config const gpuOcrEnabled: bool = true;
+
+  // ── I/O Prefetcher ─────────────────────────────────────────────────
+
+  /** Number of files to prefetch ahead via io_uring/fadvise.
+      Set to 0 to disable prefetching.
+      Default: 8 (good balance between memory pressure and throughput). */
+  config const prefetchWindow: int = 8;
+
+  // ── Dragonfly L2 Cache ──────────────────────────────────────────────
+
+  /** Dragonfly/Redis server address for L2 cross-locale shared cache.
+      Format: "host:port" (e.g., "localhost:6379").
+      Set to "" (empty) to disable L2 caching.
+      Multiple locales share one Dragonfly instance. */
+  config const dragonflyAddr: string = "";
+
+  /** L2 cache TTL in seconds (0 = no expiry).
+      Default: 604800 = 7 days.
+      Documents are re-parsed if the L2 entry expires. */
+  config const dragonflyTTL: int = 604800;
 
   // ── Processing Stages ────────────────────────────────────────────────
 

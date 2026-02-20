@@ -197,6 +197,128 @@ parseResultKindValid : (r : ParseResult) -> Maybe ContentKind
 parseResultKindValid r = intToContentKind r.contentKind
 
 --------------------------------------------------------------------------------
+-- GPU OCR Status
+--------------------------------------------------------------------------------
+
+||| Status codes for GPU OCR coprocessor results.
+||| Maps to the status field in ddac_ocr_result_t (uint8).
+public export
+data OcrStatus : Type where
+  ||| OCR succeeded, text extracted
+  OcrSuccess : OcrStatus
+  ||| Error during OCR processing
+  OcrError : OcrStatus
+  ||| Image too small or otherwise skipped
+  OcrSkipped : OcrStatus
+  ||| GPU not available — caller should fall back to CPU Tesseract
+  GpuError : OcrStatus
+
+||| Convert OcrStatus to its C integer representation
+public export
+ocrStatusToInt : OcrStatus -> Bits8
+ocrStatusToInt OcrSuccess = 0
+ocrStatusToInt OcrError   = 1
+ocrStatusToInt OcrSkipped = 2
+ocrStatusToInt GpuError   = 3
+
+||| Convert C integer to OcrStatus
+public export
+intToOcrStatus : Bits8 -> Maybe OcrStatus
+intToOcrStatus 0 = Just OcrSuccess
+intToOcrStatus 1 = Just OcrError
+intToOcrStatus 2 = Just OcrSkipped
+intToOcrStatus 3 = Just GpuError
+intToOcrStatus _ = Nothing
+
+||| Eq implementation for OcrStatus
+public export
+Eq OcrStatus where
+  OcrSuccess == OcrSuccess = True
+  OcrError   == OcrError   = True
+  OcrSkipped == OcrSkipped = True
+  GpuError   == GpuError   = True
+  _          == _          = False
+
+||| Predicate: should the caller fall back to CPU Tesseract?
+public export
+needsCpuFallback : OcrStatus -> Bool
+needsCpuFallback GpuError = True
+needsCpuFallback _        = False
+
+--------------------------------------------------------------------------------
+-- Conduit Validation Status
+--------------------------------------------------------------------------------
+
+||| Validation codes from the preprocessing conduit.
+||| Maps to the validation field in ddac_conduit_result_t (uint8).
+public export
+data ConduitValidation : Type where
+  ||| File is accessible and non-empty
+  ConduitOk : ConduitValidation
+  ||| File does not exist at the given path
+  ConduitNotFound : ConduitValidation
+  ||| File exists but is zero bytes
+  ConduitEmpty : ConduitValidation
+  ||| File exists but cannot be read (permissions, I/O error)
+  ConduitUnreadable : ConduitValidation
+
+||| Convert ConduitValidation to C integer
+public export
+conduitValidationToInt : ConduitValidation -> Bits8
+conduitValidationToInt ConduitOk         = 0
+conduitValidationToInt ConduitNotFound   = 1
+conduitValidationToInt ConduitEmpty      = 2
+conduitValidationToInt ConduitUnreadable = 3
+
+||| Convert C integer to ConduitValidation
+public export
+intToConduitValidation : Bits8 -> Maybe ConduitValidation
+intToConduitValidation 0 = Just ConduitOk
+intToConduitValidation 1 = Just ConduitNotFound
+intToConduitValidation 2 = Just ConduitEmpty
+intToConduitValidation 3 = Just ConduitUnreadable
+intToConduitValidation _ = Nothing
+
+||| Eq implementation for ConduitValidation
+public export
+Eq ConduitValidation where
+  ConduitOk         == ConduitOk         = True
+  ConduitNotFound   == ConduitNotFound   = True
+  ConduitEmpty      == ConduitEmpty      = True
+  ConduitUnreadable == ConduitUnreadable = True
+  _                 == _                 = False
+
+||| GPU Backend Detection
+public export
+data GpuBackend : Type where
+  PaddleGpu    : GpuBackend   -- PaddleOCR with CUDA/TensorRT
+  TesseractCuda : GpuBackend  -- Tesseract compiled with CUDA LSTM
+  CpuOnly      : GpuBackend   -- No GPU, CPU Tesseract fallback
+
+||| Convert GpuBackend to C integer
+public export
+gpuBackendToInt : GpuBackend -> Bits8
+gpuBackendToInt PaddleGpu     = 0
+gpuBackendToInt TesseractCuda = 1
+gpuBackendToInt CpuOnly       = 2
+
+||| Convert C integer to GpuBackend
+public export
+intToGpuBackend : Bits8 -> Maybe GpuBackend
+intToGpuBackend 0 = Just PaddleGpu
+intToGpuBackend 1 = Just TesseractCuda
+intToGpuBackend 2 = Just CpuOnly
+intToGpuBackend _ = Nothing
+
+||| Eq implementation for GpuBackend
+public export
+Eq GpuBackend where
+  PaddleGpu     == PaddleGpu     = True
+  TesseractCuda == TesseractCuda = True
+  CpuOnly       == CpuOnly       = True
+  _             == _             = False
+
+--------------------------------------------------------------------------------
 -- Opaque Handles
 --------------------------------------------------------------------------------
 
@@ -325,6 +447,44 @@ parseResultStructSize = SizeProof
 public export
 parseResultStructAlign : HasAlignment ParseResult 8
 parseResultStructAlign = AlignProof
+
+||| The ddac_ocr_result_t struct total size on LP64 platforms.
+||| Layout:
+|||   status:       uint8    @ 0   (1 byte)
+|||   confidence:   int8     @ 1   (1 byte)
+|||   _pad:         uint8[6] @ 2   (6 bytes padding)
+|||   char_count:   int64    @ 8   (8 bytes)
+|||   word_count:   int64    @ 16  (8 bytes)
+|||   gpu_time_us:  int64    @ 24  (8 bytes)
+|||   text_offset:  int64    @ 32  (8 bytes)
+|||   text_length:  int64    @ 40  (8 bytes)
+|||   Total:                       48 bytes (aligned to 8)
+public export
+ocrResultStructSize : HasSize OcrStatus 48
+ocrResultStructSize = SizeProof
+
+||| OcrResult has 8-byte alignment (due to int64 fields)
+public export
+ocrResultStructAlign : HasAlignment OcrStatus 8
+ocrResultStructAlign = AlignProof
+
+||| The ddac_conduit_result_t struct total size on LP64 platforms.
+||| Layout:
+|||   content_kind: uint8    @ 0   (1 byte)
+|||   validation:   uint8    @ 1   (1 byte)
+|||   _pad:         uint8[6] @ 2   (6 bytes padding)
+|||   file_size:    int64    @ 8   (8 bytes)
+|||   sha256:       char[65] @ 16  (65 bytes)
+|||   _pad2:        char[7]  @ 81  (7 bytes padding)
+|||   Total:                       88 bytes (aligned to 8)
+public export
+conduitResultStructSize : HasSize ConduitValidation 88
+conduitResultStructSize = SizeProof
+
+||| ConduitResult has 8-byte alignment (due to int64 field)
+public export
+conduitResultStructAlign : HasAlignment ConduitValidation 8
+conduitResultStructAlign = AlignProof
 
 --------------------------------------------------------------------------------
 -- FFI Declarations (raw primitives)

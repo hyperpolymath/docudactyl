@@ -11,6 +11,7 @@ module FaultHandler {
   use FFIBridge;
   use Config;
   use CTypes;
+  use Time;
 
   // ── Per-locale failure tracking ───────────────────────────────────────
 
@@ -19,15 +20,49 @@ module FaultHandler {
   var localeSuccessCount: atomic int;
   var localeFailureCount: atomic int;
 
+  /** Straggler tracking — documents exceeding a time threshold. */
+  var localeTimeoutCount: atomic int;
+  var localeSlowestMs: atomic int;   // longest parse time seen (milliseconds)
+  var localeTotalMs: atomic int;     // sum of all parse times (for average)
+
+  /** Per-content-type counters (ContentKind enum: 0-6). */
+  var contentTypeCounts: [0..6] atomic int;
+
   /** Reset counters (call at start of run). */
   proc resetFaultCounters() {
     localeSuccessCount.write(0);
     localeFailureCount.write(0);
+    localeTimeoutCount.write(0);
+    localeSlowestMs.write(0);
+    localeTotalMs.write(0);
+    for i in 0..6 do contentTypeCounts[i].write(0);
   }
 
-  /** Record a successful parse. */
+  /** Record a successful parse with timing. */
   proc recordSuccess() {
     localeSuccessCount.add(1);
+  }
+
+  /** Record parse timing in milliseconds. */
+  proc recordTiming(ms: int) {
+    localeTotalMs.add(ms);
+    // Update slowest (atomic CAS loop)
+    var current = localeSlowestMs.read();
+    while ms > current {
+      if localeSlowestMs.compareExchange(current, ms) then break;
+      current = localeSlowestMs.read();
+    }
+  }
+
+  /** Record a content type encounter. */
+  proc recordContentType(kind: int) {
+    if kind >= 0 && kind <= 6 then
+      contentTypeCounts[kind].add(1);
+  }
+
+  /** Record a timed-out document. */
+  proc recordTimeout() {
+    localeTimeoutCount.add(1);
   }
 
   /** Record a failed parse. */
@@ -74,8 +109,11 @@ module FaultHandler {
 
     var result: ddac_parse_result_t;
     var attempts = 0;
+    var parseTimer: stopwatch;
 
     while attempts <= maxRetriesPerDoc {
+      parseTimer.start();
+
       result = ddac_parse(
         handle,
         inputPath.c_str(),
@@ -83,6 +121,17 @@ module FaultHandler {
         fmtCode: c_int,
         stagesMask
       );
+
+      parseTimer.stop();
+      const elapsedMs = (parseTimer.elapsed() * 1000.0): int;
+      recordTiming(elapsedMs);
+      recordContentType(result.content_kind: int);
+
+      // Check for straggler (exceeds timeout threshold)
+      if elapsedMs > timeoutPerDocMs {
+        recordTimeout();
+        writeln("[straggler] ", inputPath, " took ", elapsedMs, "ms (timeout=", timeoutPerDocMs, "ms)");
+      }
 
       if parseSucceeded(result) {
         recordSuccess();
@@ -99,6 +148,7 @@ module FaultHandler {
       if attempts <= maxRetriesPerDoc then
         writeln("[fault] Retry ", attempts, "/", maxRetriesPerDoc,
                 " for: ", inputPath);
+      parseTimer.reset();
     }
 
     // All retries exhausted
@@ -110,10 +160,42 @@ module FaultHandler {
   proc faultSummary(): string {
     const succ = localeSuccessCount.read();
     const fail = localeFailureCount.read();
+    const timeouts = localeTimeoutCount.read();
     const total = succ + fail;
     const rate = if total > 0 then (fail: real / total: real) * 100.0 else 0.0;
+    const avgMs = if total > 0 then localeTotalMs.read(): real / total: real else 0.0;
+    const slowest = localeSlowestMs.read();
     return "locale " + here.id:string + ": " +
            succ:string + " ok, " + fail:string + " failed (" +
-           rate:string + "%)";
+           rate:string + "%), " +
+           timeouts:string + " stragglers, " +
+           "avg=" + avgMs:string + "ms, max=" + slowest:string + "ms";
+  }
+
+  /** Content kind names (matches ContentKind enum). */
+  proc contentKindName(kind: int): string {
+    select kind {
+      when 0 do return "PDF";
+      when 1 do return "Image";
+      when 2 do return "Audio";
+      when 3 do return "Video";
+      when 4 do return "EPUB";
+      when 5 do return "GeoSpatial";
+      when 6 do return "Unknown";
+      otherwise do return "?";
+    }
+  }
+
+  /** Get per-content-type breakdown for this locale. */
+  proc contentTypeSummary(): string {
+    var parts: string;
+    for i in 0..6 {
+      const count = contentTypeCounts[i].read();
+      if count > 0 {
+        if parts.size > 0 then parts += ", ";
+        parts += contentKindName(i) + "=" + count:string;
+      }
+    }
+    return if parts.size > 0 then parts else "none";
   }
 }

@@ -1,19 +1,20 @@
 // Docudactyl Processing Stages — Configurable Analysis Pipeline
 //
 // Each stage is enabled via a bitmask flag passed to ddac_parse.
-// Stage results are written to {output_path}.stages in JSON format.
-// Stages run AFTER the base parse, extending per-document analysis.
+// Stage results are written to {output_path}.stages.capnp in Cap'n Proto
+// binary format (see schema/stages.capnp for the wire format).
 //
 // Stage tiers (approximate per-document throughput):
 //   Lightning (>100 docs/s): PREMIS, exact_dedup, merkle_proof
-//   Fast (10-50 docs/s):     language_detect, readability, keywords, citations, coord_normalize
-//   Medium (0.2-5 docs/s):   ocr_confidence, perceptual_hash, toc_extract, subtitle_extract
+//   Fast (10-50 docs/s):     language_detect, readability, keywords, citations
+//   Medium (0.2-5 docs/s):   ocr_confidence, perceptual_hash, toc_extract
 //   Slow (minutes/doc):      multi_lang_ocr, whisper, handwriting_ocr (ML stubs)
 //
 // SPDX-License-Identifier: PMPL-1.0-or-later
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
 
 const std = @import("std");
+const capnp = @import("capnp.zig");
 
 // C library bindings — same libraries linked by build.zig
 const c = @cImport({
@@ -117,67 +118,6 @@ pub const StageContext = struct {
 };
 
 // ============================================================================
-// JSON Writer Helper
-// ============================================================================
-
-const StagesWriter = struct {
-    file: std.fs.File,
-    first: bool,
-
-    fn init(file: std.fs.File) StagesWriter {
-        return .{ .file = file, .first = true };
-    }
-
-    fn begin(self: *StagesWriter) void {
-        self.file.writeAll("{\"stages\":{") catch {};
-    }
-
-    fn end(self: *StagesWriter) void {
-        self.file.writeAll("}}\n") catch {};
-    }
-
-    fn beginSection(self: *StagesWriter, name: []const u8) void {
-        if (!self.first) self.file.writeAll(",") catch {};
-        self.first = false;
-        self.file.writeAll("\"") catch {};
-        self.file.writeAll(name) catch {};
-        self.file.writeAll("\":{") catch {};
-    }
-
-    fn endSection(self: *StagesWriter) void {
-        self.file.writeAll("}") catch {};
-    }
-
-    /// Write a JSON string value, escaping special characters.
-    fn writeJsonStr(self: *StagesWriter, s: []const u8) void {
-        self.file.writeAll("\"") catch {};
-        var start: usize = 0;
-        for (s, 0..) |ch, i| {
-            const esc: ?[]const u8 = switch (ch) {
-                '"' => "\\\"",
-                '\\' => "\\\\",
-                '\n' => "\\n",
-                '\r' => "\\r",
-                '\t' => "\\t",
-                else => null,
-            };
-            if (esc) |e| {
-                if (i > start) self.file.writeAll(s[start..i]) catch {};
-                self.file.writeAll(e) catch {};
-                start = i + 1;
-            }
-        }
-        if (start < s.len) self.file.writeAll(s[start..]) catch {};
-        self.file.writeAll("\"") catch {};
-    }
-
-    /// Write raw pre-formatted content.
-    fn raw(self: *StagesWriter, s: []const u8) void {
-        self.file.writeAll(s) catch {};
-    }
-};
-
-// ============================================================================
 // Text Reading Helper
 // ============================================================================
 
@@ -204,30 +144,43 @@ fn readExtractedText(output_path: [*:0]const u8, allocator: std.mem.Allocator) ?
 // Stop Words (English)
 // ============================================================================
 
+/// Compile-time perfect hash map for O(1) stop-word lookup.
+/// Replaces the previous linear scan over ~120 entries.
+const stop_word_map = std.StaticStringMap(void).initComptime(.{
+    .{ "a", {} },       .{ "about", {} },   .{ "after", {} },   .{ "all", {} },
+    .{ "also", {} },    .{ "am", {} },      .{ "an", {} },      .{ "and", {} },
+    .{ "any", {} },     .{ "are", {} },     .{ "as", {} },      .{ "at", {} },
+    .{ "be", {} },      .{ "been", {} },    .{ "before", {} },  .{ "being", {} },
+    .{ "between", {} }, .{ "both", {} },    .{ "but", {} },     .{ "by", {} },
+    .{ "can", {} },     .{ "could", {} },   .{ "did", {} },     .{ "do", {} },
+    .{ "does", {} },    .{ "doing", {} },   .{ "down", {} },    .{ "during", {} },
+    .{ "each", {} },    .{ "few", {} },     .{ "for", {} },     .{ "from", {} },
+    .{ "further", {} }, .{ "get", {} },     .{ "got", {} },     .{ "had", {} },
+    .{ "has", {} },     .{ "have", {} },    .{ "he", {} },      .{ "her", {} },
+    .{ "here", {} },    .{ "him", {} },     .{ "his", {} },     .{ "how", {} },
+    .{ "i", {} },       .{ "if", {} },      .{ "in", {} },      .{ "into", {} },
+    .{ "is", {} },      .{ "it", {} },      .{ "its", {} },     .{ "just", {} },
+    .{ "may", {} },     .{ "me", {} },      .{ "might", {} },   .{ "more", {} },
+    .{ "most", {} },    .{ "must", {} },    .{ "my", {} },      .{ "no", {} },
+    .{ "nor", {} },     .{ "not", {} },     .{ "now", {} },     .{ "of", {} },
+    .{ "off", {} },     .{ "on", {} },      .{ "once", {} },    .{ "only", {} },
+    .{ "or", {} },      .{ "other", {} },   .{ "our", {} },     .{ "out", {} },
+    .{ "over", {} },    .{ "own", {} },     .{ "s", {} },       .{ "same", {} },
+    .{ "shall", {} },   .{ "she", {} },     .{ "should", {} },  .{ "so", {} },
+    .{ "some", {} },    .{ "such", {} },    .{ "t", {} },       .{ "than", {} },
+    .{ "that", {} },    .{ "the", {} },     .{ "their", {} },   .{ "them", {} },
+    .{ "then", {} },    .{ "there", {} },   .{ "these", {} },   .{ "they", {} },
+    .{ "this", {} },    .{ "those", {} },   .{ "through", {} }, .{ "to", {} },
+    .{ "too", {} },     .{ "under", {} },   .{ "until", {} },   .{ "up", {} },
+    .{ "us", {} },      .{ "very", {} },    .{ "was", {} },     .{ "we", {} },
+    .{ "were", {} },    .{ "what", {} },    .{ "when", {} },    .{ "where", {} },
+    .{ "which", {} },   .{ "while", {} },   .{ "who", {} },     .{ "whom", {} },
+    .{ "why", {} },     .{ "will", {} },    .{ "with", {} },    .{ "would", {} },
+    .{ "you", {} },     .{ "your", {} },
+});
+
 fn isStopWord(word: []const u8) bool {
-    const stops = [_][]const u8{
-        "a",     "about",   "after",  "all",    "also",   "am",     "an",
-        "and",   "any",     "are",    "as",     "at",     "be",     "been",
-        "before","being",   "between","both",   "but",    "by",     "can",
-        "could", "did",     "do",     "does",   "doing",  "down",   "during",
-        "each",  "few",     "for",    "from",   "further","get",    "got",
-        "had",   "has",     "have",   "he",     "her",    "here",   "him",
-        "his",   "how",     "i",      "if",     "in",     "into",   "is",
-        "it",    "its",     "just",   "may",    "me",     "might",  "more",
-        "most",  "must",    "my",     "no",     "nor",    "not",    "now",
-        "of",    "off",     "on",     "once",   "only",   "or",     "other",
-        "our",   "out",     "over",   "own",    "s",      "same",   "shall",
-        "she",   "should",  "so",     "some",   "such",   "t",      "than",
-        "that",  "the",     "their",  "them",   "then",   "there",  "these",
-        "they",  "this",    "those",  "through","to",     "too",    "under",
-        "until", "up",      "us",     "very",   "was",    "we",     "were",
-        "what",  "when",    "where",  "which",  "while",  "who",    "whom",
-        "why",   "will",    "with",   "would",  "you",    "your",
-    };
-    for (stops) |sw| {
-        if (std.mem.eql(u8, word, sw)) return true;
-    }
-    return false;
+    return stop_word_map.has(word);
 }
 
 // ============================================================================
@@ -235,10 +188,7 @@ fn isStopWord(word: []const u8) bool {
 // ============================================================================
 
 /// Language detection via Unicode script analysis.
-/// Counts byte patterns to identify dominant script/language.
-fn stageLanguageDetect(w: *StagesWriter, text: []const u8) void {
-    w.beginSection("language_detect");
-
+fn stageLanguageDetect(b: *capnp.Builder, text: []const u8) void {
     var latin: u64 = 0;
     var cjk: u64 = 0;
     var cyrillic: u64 = 0;
@@ -248,29 +198,26 @@ fn stageLanguageDetect(w: *StagesWriter, text: []const u8) void {
 
     var i: usize = 0;
     while (i < text.len) {
-        const b = text[i];
-        if (b < 0x80) {
-            // ASCII — count only alphabetic
-            if (std.ascii.isAlphabetic(b)) {
+        const byte = text[i];
+        if (byte < 0x80) {
+            if (std.ascii.isAlphabetic(byte)) {
                 latin += 1;
                 total += 1;
             }
             i += 1;
-        } else if (b >= 0xC0 and b < 0xE0 and i + 1 < text.len) {
-            // 2-byte UTF-8
-            if (b >= 0xD0 and b <= 0xD3) cyrillic += 1 // U+0400-U+04FF
-            else if (b >= 0xD8 and b <= 0xDB) arabic += 1 // U+0600-U+06FF
-            else latin += 1; // Extended Latin and others
+        } else if (byte >= 0xC0 and byte < 0xE0 and i + 1 < text.len) {
+            if (byte >= 0xD0 and byte <= 0xD3) cyrillic += 1
+            else if (byte >= 0xD8 and byte <= 0xDB) arabic += 1
+            else latin += 1;
             total += 1;
             i += 2;
-        } else if (b >= 0xE0 and b < 0xF0 and i + 2 < text.len) {
-            // 3-byte UTF-8
-            if (b == 0xE0 and text[i + 1] >= 0xA4 and text[i + 1] <= 0xA7) devanagari += 1 // U+0900-U+097F
-            else if (b >= 0xE4 and b <= 0xE9) cjk += 1 // U+4000-U+9FFF (CJK Unified)
-            else total += 1; // other scripts
+        } else if (byte >= 0xE0 and byte < 0xF0 and i + 2 < text.len) {
+            if (byte == 0xE0 and text[i + 1] >= 0xA4 and text[i + 1] <= 0xA7) devanagari += 1
+            else if (byte >= 0xE4 and byte <= 0xE9) cjk += 1
+            else total += 1;
             total += 1;
             i += 3;
-        } else if (b >= 0xF0 and i + 3 < text.len) {
+        } else if (byte >= 0xF0 and i + 3 < text.len) {
             total += 1;
             i += 4;
         } else {
@@ -278,7 +225,6 @@ fn stageLanguageDetect(w: *StagesWriter, text: []const u8) void {
         }
     }
 
-    // Determine dominant script
     const max_count = @max(latin, @max(cjk, @max(cyrillic, @max(arabic, devanagari))));
     const script: []const u8 = if (max_count == 0) "Unknown"
         else if (max_count == cjk) "CJK"
@@ -287,7 +233,6 @@ fn stageLanguageDetect(w: *StagesWriter, text: []const u8) void {
         else if (max_count == devanagari) "Devanagari"
         else "Latin";
 
-    // Rough language guess from script
     const language: []const u8 = if (max_count == 0) "und"
         else if (max_count == cjk) "zh"
         else if (max_count == cyrillic) "ru"
@@ -297,18 +242,13 @@ fn stageLanguageDetect(w: *StagesWriter, text: []const u8) void {
 
     const conf: f64 = if (total > 0) @as(f64, @floatFromInt(max_count)) / @as(f64, @floatFromInt(total)) else 0.0;
 
-    var buf: [256]u8 = undefined;
-    const s = std.fmt.bufPrint(&buf, "\"script\":\"{s}\",\"language\":\"{s}\",\"confidence\":{d:.3}", .{
-        script, language, conf,
-    }) catch return;
-    w.raw(s);
-    w.endSection();
+    b.setText(capnp.PTR_LANG_SCRIPT, script);
+    b.setText(capnp.PTR_LANG_LANGUAGE, language);
+    b.setF64(capnp.OFF_LANG_CONFIDENCE, conf);
 }
 
 /// Flesch-Kincaid readability scoring.
-fn stageReadability(w: *StagesWriter, text: []const u8) void {
-    w.beginSection("readability");
-
+fn stageReadability(b: *capnp.Builder, text: []const u8) void {
     var sentences: u64 = 0;
     var words: u64 = 0;
     var syllables: u64 = 0;
@@ -318,23 +258,19 @@ fn stageReadability(w: *StagesWriter, text: []const u8) void {
     for (text) |ch| {
         const lower = std.ascii.toLower(ch);
 
-        // Sentence boundaries
         if (ch == '.' or ch == '?' or ch == '!') {
             sentences += 1;
         }
 
-        // Word boundaries
         if (ch == ' ' or ch == '\n' or ch == '\r' or ch == '\t' or ch == '.' or ch == ',' or ch == ';' or ch == ':') {
             if (in_word) {
                 words += 1;
-                // End-of-word: add at least one syllable per word
                 if (syllables == 0) syllables = 1;
                 vowel_prev = false;
             }
             in_word = false;
         } else if (std.ascii.isAlphabetic(ch)) {
             in_word = true;
-            // Syllable estimation: count vowel groups
             const is_vowel = (lower == 'a' or lower == 'e' or lower == 'i' or lower == 'o' or lower == 'u' or lower == 'y');
             if (is_vowel and !vowel_prev) {
                 syllables += 1;
@@ -351,34 +287,27 @@ fn stageReadability(w: *StagesWriter, text: []const u8) void {
     const s_f: f64 = @floatFromInt(sentences);
     const sy_f: f64 = @floatFromInt(syllables);
 
-    // Flesch-Kincaid Grade Level
     const fk_grade = 0.39 * (w_f / s_f) + 11.8 * (sy_f / w_f) - 15.59;
-    // Flesch Reading Ease
     const fk_ease = 206.835 - 1.015 * (w_f / s_f) - 84.6 * (sy_f / w_f);
 
-    var buf: [384]u8 = undefined;
-    const out = std.fmt.bufPrint(&buf, "\"flesch_kincaid_grade\":{d:.1},\"flesch_reading_ease\":{d:.1},\"sentences\":{d},\"words\":{d},\"syllables\":{d}", .{
-        fk_grade, fk_ease, sentences, words, syllables,
-    }) catch return;
-    w.raw(out);
-    w.endSection();
+    b.setF64(capnp.OFF_READ_GRADE, fk_grade);
+    b.setF64(capnp.OFF_READ_EASE, fk_ease);
+    b.setU64(capnp.OFF_READ_SENTENCES, sentences);
+    b.setU64(capnp.OFF_READ_WORDS, words);
+    b.setU64(capnp.OFF_READ_SYLLABLES, syllables);
 }
 
 /// Keyword extraction via word frequency analysis.
-fn stageKeywords(w: *StagesWriter, text: []const u8) void {
-    w.beginSection("keywords");
-
+fn stageKeywords(b: *capnp.Builder, text: []const u8) void {
     var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // Count word frequencies
     var counts = std.StringHashMap(u32).init(alloc);
 
     var lower_buf: [128]u8 = undefined;
     var pos: usize = 0;
     while (pos < text.len) {
-        // Skip non-alpha
         while (pos < text.len and !std.ascii.isAlphabetic(text[pos])) : (pos += 1) {}
         if (pos >= text.len) break;
 
@@ -386,19 +315,15 @@ fn stageKeywords(w: *StagesWriter, text: []const u8) void {
         while (pos < text.len and std.ascii.isAlphabetic(text[pos])) : (pos += 1) {}
         const word = text[start..pos];
 
-        // Skip short words
         if (word.len < 3 or word.len > 127) continue;
 
-        // Lowercase
-        for (word, 0..) |ch, i| {
-            lower_buf[i] = std.ascii.toLower(ch);
+        for (word, 0..) |ch, idx| {
+            lower_buf[idx] = std.ascii.toLower(ch);
         }
         const lower = lower_buf[0..word.len];
 
-        // Skip stop words
         if (isStopWord(lower)) continue;
 
-        // Clone key for HashMap (arena-allocated, freed in bulk)
         if (counts.getPtr(lower)) |val| {
             val.* += 1;
         } else {
@@ -419,34 +344,27 @@ fn stageKeywords(w: *StagesWriter, text: []const u8) void {
         if (top_count < MAX_KW or entry.count > top[top_count - 1].count) {
             var insert_pos = top_count;
             if (insert_pos == MAX_KW) insert_pos -= 1 else top_count += 1;
-            // Shift down
-            var i = insert_pos;
-            while (i > 0 and top[i - 1].count < entry.count) : (i -= 1) {
-                top[i] = top[i - 1];
+            var j = insert_pos;
+            while (j > 0 and top[j - 1].count < entry.count) : (j -= 1) {
+                top[j] = top[j - 1];
             }
-            top[i] = entry;
+            top[j] = entry;
         }
     }
 
-    // Write JSON
-    var buf: [64]u8 = undefined;
-    const cnt = std.fmt.bufPrint(&buf, "\"count\":{d},\"total_unique\":{d},\"words\":[", .{
-        top_count, counts.count(),
-    }) catch return;
-    w.raw(cnt);
+    b.setU32(capnp.OFF_KW_COUNT, @intCast(top_count));
+    b.setU32(capnp.OFF_KW_UNIQUE, @intCast(counts.count()));
 
-    for (top[0..top_count], 0..) |entry, i| {
-        if (i > 0) w.raw(",");
-        w.writeJsonStr(entry.word);
+    // Collect keyword strings for the text list
+    var kw_slices: [MAX_KW][]const u8 = undefined;
+    for (0..top_count) |ki| {
+        kw_slices[ki] = top[ki].word;
     }
-    w.raw("]");
-    w.endSection();
+    b.setTextList(capnp.PTR_KW_WORDS, kw_slices[0..top_count]);
 }
 
 /// Citation pattern extraction (DOI, ISBN, URL, year references).
-fn stageCitationExtract(w: *StagesWriter, text: []const u8) void {
-    w.beginSection("citations");
-
+fn stageCitationExtract(b: *capnp.Builder, text: []const u8) void {
     var doi_count: u32 = 0;
     var isbn_count: u32 = 0;
     var url_count: u32 = 0;
@@ -455,7 +373,6 @@ fn stageCitationExtract(w: *StagesWriter, text: []const u8) void {
 
     var i: usize = 0;
     while (i < text.len) {
-        // DOI: "10." followed by 4+ digits, then "/"
         if (i + 7 < text.len and text[i] == '1' and text[i + 1] == '0' and text[i + 2] == '.') {
             var j = i + 3;
             var digits: u32 = 0;
@@ -467,7 +384,6 @@ fn stageCitationExtract(w: *StagesWriter, text: []const u8) void {
             }
         }
 
-        // ISBN: "ISBN" (case-insensitive) followed by optional colon/space then digits
         if (i + 4 < text.len) {
             const maybe_isbn = text[i..i + 4];
             if (std.ascii.eqlIgnoreCase(maybe_isbn, "isbn")) {
@@ -477,18 +393,15 @@ fn stageCitationExtract(w: *StagesWriter, text: []const u8) void {
             }
         }
 
-        // URL: "http://" or "https://"
         if (i + 7 < text.len) {
             if (std.mem.startsWith(u8, text[i..], "http://") or
                 std.mem.startsWith(u8, text[i..], "https://")) {
                 url_count += 1;
-                // Skip to whitespace
                 while (i < text.len and text[i] != ' ' and text[i] != '\n') : (i += 1) {}
                 continue;
             }
         }
 
-        // Year reference: (19xx) or (20xx) where xx are digits
         if (i + 5 < text.len and text[i] == '(') {
             if ((text[i + 1] == '1' and text[i + 2] == '9') or
                 (text[i + 1] == '2' and text[i + 2] == '0'))
@@ -501,7 +414,6 @@ fn stageCitationExtract(w: *StagesWriter, text: []const u8) void {
             }
         }
 
-        // Numeric reference: [N] or [NN] or [NNN]
         if (i + 2 < text.len and text[i] == '[' and std.ascii.isDigit(text[i + 1])) {
             var j = i + 1;
             while (j < text.len and std.ascii.isDigit(text[j])) : (j += 1) {}
@@ -515,64 +427,41 @@ fn stageCitationExtract(w: *StagesWriter, text: []const u8) void {
         i += 1;
     }
 
-    const total = doi_count + isbn_count + url_count + year_count + num_ref_count;
-    var buf: [256]u8 = undefined;
-    const s = std.fmt.bufPrint(&buf, "\"total\":{d},\"doi\":{d},\"isbn\":{d},\"url\":{d},\"year_ref\":{d},\"numeric_ref\":{d}", .{
-        total, doi_count, isbn_count, url_count, year_count, num_ref_count,
-    }) catch return;
-    w.raw(s);
-    w.endSection();
+    b.setU32(capnp.OFF_CIT_TOTAL, doi_count + isbn_count + url_count + year_count + num_ref_count);
+    b.setU32(capnp.OFF_CIT_DOI, doi_count);
+    b.setU32(capnp.OFF_CIT_ISBN, isbn_count);
+    b.setU32(capnp.OFF_CIT_URL, url_count);
+    b.setU32(capnp.OFF_CIT_YEAR, year_count);
+    b.setU32(capnp.OFF_CIT_NUMREF, num_ref_count);
 }
 
 // ============================================================================
 // Stage Implementations — Image Analysis
 // ============================================================================
 
-/// OCR confidence (captured during base parse, just written here).
-fn stageOcrConfidence(w: *StagesWriter, confidence: i32) void {
-    w.beginSection("ocr_confidence");
-    var buf: [64]u8 = undefined;
-    const s = std.fmt.bufPrint(&buf, "\"mean_confidence\":{d}", .{confidence}) catch return;
-    w.raw(s);
-    w.endSection();
+/// OCR confidence (captured during base parse).
+fn stageOcrConfidence(b: *capnp.Builder, confidence: i32) void {
+    b.setI32(capnp.OFF_OCR_CONF, confidence);
 }
 
 /// Perceptual hash (average hash) via Leptonica.
-/// Re-reads the image, samples 8x8 blocks, thresholds against mean.
-fn stagePerceptualHash(w: *StagesWriter, input_path: [*:0]const u8) void {
-    w.beginSection("perceptual_hash");
-
+fn stagePerceptualHash(b: *capnp.Builder, input_path: [*:0]const u8) void {
     const pix = c.pixRead(input_path);
-    if (pix == null) {
-        w.raw("\"error\":\"cannot read image\"");
-        w.endSection();
-        return;
-    }
+    if (pix == null) return;
     defer c.pixDestroy(@constCast(&pix));
 
-    // Convert to 8-bit grayscale
     const gray = c.pixConvertTo8(pix, 0);
-    if (gray == null) {
-        w.raw("\"error\":\"grayscale conversion failed\"");
-        w.endSection();
-        return;
-    }
+    if (gray == null) return;
     defer c.pixDestroy(@constCast(&gray));
 
     const pw: u32 = @intCast(c.pixGetWidth(gray));
     const ph: u32 = @intCast(c.pixGetHeight(gray));
-    if (pw < 8 or ph < 8) {
-        w.raw("\"error\":\"image too small for perceptual hash\"");
-        w.endSection();
-        return;
-    }
+    if (pw < 8 or ph < 8) return;
 
-    // Sample 8x8 grid, compute average pixel values
     var values: [64]f64 = undefined;
     var total: f64 = 0.0;
     for (0..8) |row| {
         for (0..8) |col| {
-            // Center of each block
             const x: c_int = @intCast(@as(u32, @intCast(col)) * pw / 8 + pw / 16);
             const y: c_int = @intCast(@as(u32, @intCast(row)) * ph / 8 + ph / 16);
             var pixel: c.l_uint32 = 0;
@@ -591,19 +480,14 @@ fn stagePerceptualHash(w: *StagesWriter, input_path: [*:0]const u8) void {
         }
     }
 
-    // Format as 16-char hex string
-    var hex_buf: [17]u8 = undefined;
+    var hex_buf: [16]u8 = undefined;
     const hex_chars = "0123456789abcdef";
     for (0..16) |hi| {
         const shift: u6 = @intCast((15 - hi) * 4);
         hex_buf[hi] = hex_chars[@as(usize, @intCast((hash >> shift) & 0xF))];
     }
-    hex_buf[16] = 0;
 
-    w.raw("\"ahash\":\"");
-    w.raw(hex_buf[0..16]);
-    w.raw("\"");
-    w.endSection();
+    b.setText(capnp.PTR_PHASH_AHASH, &hex_buf);
 }
 
 // ============================================================================
@@ -611,18 +495,11 @@ fn stagePerceptualHash(w: *StagesWriter, input_path: [*:0]const u8) void {
 // ============================================================================
 
 /// Table of Contents extraction via Poppler index API.
-fn stageTocExtract(w: *StagesWriter, input_path: [*:0]const u8) void {
-    w.beginSection("toc");
-
-    // Build file:// URI
+fn stageTocExtract(b: *capnp.Builder, input_path: [*:0]const u8) void {
     const path_slice = std.mem.span(input_path);
     const prefix = "file://";
     var uri_buf: [4096]u8 = undefined;
-    if (prefix.len + path_slice.len >= 4096) {
-        w.raw("\"error\":\"path too long\"");
-        w.endSection();
-        return;
-    }
+    if (prefix.len + path_slice.len >= 4096) return;
     @memcpy(uri_buf[0..prefix.len], prefix);
     @memcpy(uri_buf[prefix.len .. prefix.len + path_slice.len], path_slice);
     uri_buf[prefix.len + path_slice.len] = 0;
@@ -631,64 +508,73 @@ fn stageTocExtract(w: *StagesWriter, input_path: [*:0]const u8) void {
     const doc = c.poppler_document_new_from_file(&uri_buf, null, &gerr);
     if (doc == null) {
         if (gerr) |e| c.g_error_free(e);
-        w.raw("\"error\":\"cannot open PDF\"");
-        w.endSection();
         return;
     }
     defer c.g_object_unref(doc);
 
     const iter_ptr = c.poppler_index_iter_new(doc);
-    if (iter_ptr == null) {
-        w.raw("\"entries\":[]");
-        w.endSection();
-        return;
-    }
+    if (iter_ptr == null) return;
     defer c.poppler_index_iter_free(iter_ptr);
 
-    // Walk the top-level index entries (max 100 to bound output size)
-    w.raw("\"entries\":[");
-    var count: u32 = 0;
-    const max_entries: u32 = 100;
+    // First pass: count entries (max 100)
+    var entry_count: usize = 0;
+    const max_entries: usize = 100;
+    countTocEntries(iter_ptr, &entry_count, max_entries, 0);
 
-    walkTocEntries(w, iter_ptr, &count, max_entries, 0);
+    if (entry_count == 0) return;
 
-    w.raw("]");
-    w.endSection();
+    // Re-create iterator for second pass
+    c.poppler_index_iter_free(iter_ptr);
+    const iter2 = c.poppler_index_iter_new(doc);
+    if (iter2 == null) return;
+    defer c.poppler_index_iter_free(iter2);
+
+    // Allocate composite list
+    var list = b.allocCompositeList(capnp.PTR_TOC_ENTRIES, entry_count, capnp.TOC_DW, capnp.TOC_PW) orelse return;
+
+    // Second pass: populate entries
+    var idx: usize = 0;
+    writeTocEntries(&list, iter2, &idx, entry_count, 0);
 }
 
-/// Recursively walk Poppler index entries (depth-limited).
-fn walkTocEntries(w: *StagesWriter, iter_ptr: *c.PopplerIndexIter, count: *u32, max: u32, depth: u32) void {
-    if (depth > 5) return; // prevent deep recursion
-
+fn countTocEntries(iter_ptr: *c.PopplerIndexIter, count: *usize, max: usize, depth: u32) void {
+    if (depth > 5) return;
     var running = true;
     while (running) {
         if (count.* >= max) return;
-
         const action = c.poppler_index_iter_get_action(iter_ptr);
         if (action != null) {
             defer c.poppler_action_free(action);
-
-            // Get title from action
-            if (action.*.any.title) |title_ptr| {
-                if (count.* > 0) w.raw(",");
-                w.raw("{\"title\":");
-                w.writeJsonStr(std.mem.span(title_ptr));
-
-                var buf: [32]u8 = undefined;
-                const d = std.fmt.bufPrint(&buf, ",\"depth\":{d}", .{depth}) catch "";
-                w.raw(d);
-                w.raw("}");
-                count.* += 1;
-            }
+            if (action.*.any.title != null) count.* += 1;
         }
-
-        // Recurse into children
         const child = c.poppler_index_iter_get_child(iter_ptr);
         if (child != null) {
-            walkTocEntries(w, child, count, max, depth + 1);
+            countTocEntries(child, count, max, depth + 1);
             c.poppler_index_iter_free(child);
         }
+        running = (c.poppler_index_iter_next(iter_ptr) != 0);
+    }
+}
 
+fn writeTocEntries(list: *capnp.CompositeList, iter_ptr: *c.PopplerIndexIter, idx: *usize, max: usize, depth: u32) void {
+    if (depth > 5) return;
+    var running = true;
+    while (running) {
+        if (idx.* >= max) return;
+        const action = c.poppler_index_iter_get_action(iter_ptr);
+        if (action != null) {
+            defer c.poppler_action_free(action);
+            if (action.*.any.title) |title_ptr| {
+                list.setElemText(idx.*, 0, std.mem.span(title_ptr));
+                list.setElemU32(idx.*, capnp.TOC_OFF_DEPTH, depth);
+                idx.* += 1;
+            }
+        }
+        const child = c.poppler_index_iter_get_child(iter_ptr);
+        if (child != null) {
+            writeTocEntries(list, child, idx, max, depth + 1);
+            c.poppler_index_iter_free(child);
+        }
         running = (c.poppler_index_iter_next(iter_ptr) != 0);
     }
 }
@@ -698,65 +584,52 @@ fn walkTocEntries(w: *StagesWriter, iter_ptr: *c.PopplerIndexIter, count: *u32, 
 // ============================================================================
 
 /// Subtitle stream information extraction via FFmpeg.
-fn stageSubtitleExtract(w: *StagesWriter, input_path: [*:0]const u8) void {
-    w.beginSection("subtitles");
-
+fn stageSubtitleExtract(b: *capnp.Builder, input_path: [*:0]const u8) void {
     var fmt_ctx: ?*c.AVFormatContext = null;
-    if (c.avformat_open_input(&fmt_ctx, input_path, null, null) < 0) {
-        w.raw("\"error\":\"cannot open media file\"");
-        w.endSection();
-        return;
-    }
+    if (c.avformat_open_input(&fmt_ctx, input_path, null, null) < 0) return;
     defer c.avformat_close_input(&fmt_ctx);
 
-    if (c.avformat_find_stream_info(fmt_ctx, null) < 0) {
-        w.raw("\"error\":\"cannot read stream info\"");
-        w.endSection();
-        return;
-    }
+    if (c.avformat_find_stream_info(fmt_ctx, null) < 0) return;
 
     const ctx = fmt_ctx.?;
-    var stream_count: u32 = 0;
-    w.raw("\"streams\":[");
 
-    for (0..ctx.nb_streams) |i| {
-        const stream = ctx.streams[i];
+    // First pass: count subtitle streams
+    var stream_count: usize = 0;
+    for (0..ctx.nb_streams) |si| {
+        const stream = ctx.streams[si];
         if (stream.*.codecpar.*.codec_type == c.AVMEDIA_TYPE_SUBTITLE) {
-            if (stream_count > 0) w.raw(",");
-
-            w.raw("{\"index\":");
-            var idx_buf: [16]u8 = undefined;
-            const idx_s = std.fmt.bufPrint(&idx_buf, "{d}", .{i}) catch "";
-            w.raw(idx_s);
-
-            // Codec name
-            const codec = c.avcodec_find_decoder(stream.*.codecpar.*.codec_id);
-            if (codec != null and codec.*.name != null) {
-                w.raw(",\"codec\":");
-                w.writeJsonStr(std.mem.span(codec.*.name));
-            }
-
-            // Language tag from metadata
-            if (stream.*.metadata) |metadata| {
-                const tag = c.av_dict_get(metadata, "language", null, 0);
-                if (tag != null) {
-                    if (tag.*.value) |v| {
-                        w.raw(",\"language\":");
-                        w.writeJsonStr(std.mem.span(v));
-                    }
-                }
-            }
-
-            w.raw("}");
             stream_count += 1;
         }
     }
 
-    w.raw("]");
-    var cnt_buf: [32]u8 = undefined;
-    const cnt_s = std.fmt.bufPrint(&cnt_buf, ",\"stream_count\":{d}", .{stream_count}) catch "";
-    w.raw(cnt_s);
-    w.endSection();
+    b.setU32(capnp.OFF_SUB_COUNT, @intCast(stream_count));
+    if (stream_count == 0) return;
+
+    var list = b.allocCompositeList(capnp.PTR_SUB_STREAMS, stream_count, capnp.SUB_DW, capnp.SUB_PW) orelse return;
+
+    var elem_idx: usize = 0;
+    for (0..ctx.nb_streams) |si| {
+        const stream = ctx.streams[si];
+        if (stream.*.codecpar.*.codec_type == c.AVMEDIA_TYPE_SUBTITLE) {
+            list.setElemU32(elem_idx, capnp.SUB_OFF_INDEX, @intCast(si));
+
+            const codec = c.avcodec_find_decoder(stream.*.codecpar.*.codec_id);
+            if (codec != null and codec.*.name != null) {
+                list.setElemText(elem_idx, 0, std.mem.span(codec.*.name));
+            }
+
+            if (stream.*.metadata) |metadata| {
+                const tag = c.av_dict_get(metadata, "language", null, 0);
+                if (tag != null) {
+                    if (tag.*.value) |v| {
+                        list.setElemText(elem_idx, 1, std.mem.span(v));
+                    }
+                }
+            }
+
+            elem_idx += 1;
+        }
+    }
 }
 
 // ============================================================================
@@ -764,10 +637,7 @@ fn stageSubtitleExtract(w: *StagesWriter, input_path: [*:0]const u8) void {
 // ============================================================================
 
 /// PREMIS preservation metadata generation.
-fn stagePremisMetadata(w: *StagesWriter, ctx: *const StageContext) void {
-    w.beginSection("premis");
-
-    // File size
+fn stagePremisMetadata(b: *capnp.Builder, ctx: *const StageContext) void {
     const path_slice = std.mem.span(ctx.input_path);
     const file_size: i64 = blk: {
         const f = std.fs.openFileAbsolute(path_slice, .{}) catch break :blk 0;
@@ -776,139 +646,147 @@ fn stagePremisMetadata(w: *StagesWriter, ctx: *const StageContext) void {
         break :blk @intCast(stat.size);
     };
 
-    w.raw("\"object_category\":\"file\"");
-
-    w.raw(",\"format\":");
-    w.writeJsonStr(std.mem.sliceTo(ctx.mime_type, 0));
-
-    var buf: [128]u8 = undefined;
-    const sz = std.fmt.bufPrint(&buf, ",\"size\":{d}", .{file_size}) catch "";
-    w.raw(sz);
-
-    w.raw(",\"fixity\":{\"algorithm\":\"SHA-256\",\"value\":");
-    w.writeJsonStr(std.mem.sliceTo(ctx.sha256, 0));
-    w.raw("}");
-
-    w.raw(",\"format_registry\":\"PRONOM\"");
-    w.endSection();
+    b.setText(capnp.PTR_PREMIS_CAT, "file");
+    b.setText(capnp.PTR_PREMIS_FMT, std.mem.sliceTo(ctx.mime_type, 0));
+    b.setI64(capnp.OFF_PREMIS_SIZE, file_size);
+    b.setText(capnp.PTR_PREMIS_FIXALG, "SHA-256");
+    b.setText(capnp.PTR_PREMIS_FIXVAL, std.mem.sliceTo(ctx.sha256, 0));
+    b.setText(capnp.PTR_PREMIS_FMTREG, "PRONOM");
 }
 
-/// Merkle proof — SHA-256 hash tree over extracted content chunks.
-fn stageMerkleProof(w: *StagesWriter, output_path: [*:0]const u8) void {
-    w.beginSection("merkle_proof");
+/// Streaming Merkle tree — O(log n) memory instead of O(n).
+///
+/// Maintains a stack of partial hashes at each tree level. When two hashes
+/// accumulate at a given level, they're combined and pushed up. This processes
+/// arbitrarily large files with only ~32 * max_depth bytes of state.
+const MerkleStack = struct {
+    /// Stack of partial hashes at each tree depth.
+    /// Index 0 = leaf level, index 1 = first interior level, etc.
+    /// A slot is "occupied" when its flag is set.
+    hashes: [MAX_DEPTH][32]u8,
+    occupied: [MAX_DEPTH]bool,
+    leaf_count: u32,
 
-    const file = std.fs.openFileAbsoluteZ(output_path, .{}) catch {
-        w.raw("\"error\":\"cannot read output file\"");
-        w.endSection();
-        return;
-    };
+    const MAX_DEPTH: usize = 32; // supports up to 2^32 leaves (~17 TB at 4KB chunks)
+
+    fn init() MerkleStack {
+        return .{
+            .hashes = undefined,
+            .occupied = [_]bool{false} ** MAX_DEPTH,
+            .leaf_count = 0,
+        };
+    }
+
+    /// Push a leaf hash into the streaming tree.
+    fn pushLeaf(self: *MerkleStack, leaf: [32]u8) void {
+        self.leaf_count += 1;
+        self.pushAt(0, leaf);
+    }
+
+    fn pushAt(self: *MerkleStack, level: usize, hash: [32]u8) void {
+        if (level >= MAX_DEPTH) return;
+        if (self.occupied[level]) {
+            // Combine with existing hash at this level and push up
+            var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+            hasher.update(&self.hashes[level]);
+            hasher.update(&hash);
+            self.occupied[level] = false;
+            self.pushAt(level + 1, hasher.finalResult());
+        } else {
+            self.hashes[level] = hash;
+            self.occupied[level] = true;
+        }
+    }
+
+    /// Finalize the tree — combine all remaining partial hashes bottom-up.
+    /// Returns the root hash and tree depth.
+    fn finalize(self: *MerkleStack) struct { root: [32]u8, depth: u32 } {
+        var found_first = false;
+        var current: [32]u8 = undefined;
+        var depth: u32 = 0;
+
+        for (0..MAX_DEPTH) |level| {
+            if (self.occupied[level]) {
+                if (!found_first) {
+                    current = self.hashes[level];
+                    found_first = true;
+                    depth = @intCast(level);
+                } else {
+                    var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+                    hasher.update(&self.hashes[level]);
+                    hasher.update(&current);
+                    current = hasher.finalResult();
+                    depth = @intCast(level + 1);
+                }
+            }
+        }
+
+        return .{ .root = current, .depth = depth };
+    }
+};
+
+/// Merkle proof — SHA-256 hash tree over extracted content chunks.
+/// Uses streaming computation: O(log n) memory instead of O(n).
+fn stageMerkleProof(b: *capnp.Builder, output_path: [*:0]const u8) void {
+    const file = std.fs.openFileAbsoluteZ(output_path, .{}) catch return;
     defer file.close();
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    // Hash 4KB chunks
-    var leaf_hashes = std.ArrayList([32]u8).init(alloc);
+    var tree = MerkleStack.init();
     var chunk_buf: [4096]u8 = undefined;
+
     while (true) {
         const n = file.read(&chunk_buf) catch break;
         if (n == 0) break;
         var hasher = std.crypto.hash.sha2.Sha256.init(.{});
         hasher.update(chunk_buf[0..n]);
-        leaf_hashes.append(hasher.finalResult()) catch break;
+        tree.pushLeaf(hasher.finalResult());
     }
 
-    if (leaf_hashes.items.len == 0) {
-        w.raw("\"root\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"depth\":0,\"leaf_count\":0");
-        w.endSection();
+    if (tree.leaf_count == 0) {
+        b.setText(capnp.PTR_MERKLE_ROOT, "0000000000000000000000000000000000000000000000000000000000000000");
+        b.setU32(capnp.OFF_MERKLE_DEPTH, 0);
+        b.setU32(capnp.OFF_MERKLE_LEAVES, 0);
         return;
     }
 
-    // Build Merkle tree bottom-up
-    var current = leaf_hashes.items;
-    var depth: u32 = 0;
-    while (current.len > 1) {
-        var next = std.ArrayList([32]u8).init(alloc);
-        var i: usize = 0;
-        while (i < current.len) : (i += 2) {
-            var hasher = std.crypto.hash.sha2.Sha256.init(.{});
-            hasher.update(&current[i]);
-            if (i + 1 < current.len) {
-                hasher.update(&current[i + 1]);
-            } else {
-                hasher.update(&current[i]); // duplicate last if odd
-            }
-            next.append(hasher.finalResult()) catch break;
-        }
-        current = next.items;
-        depth += 1;
-    }
+    const result = tree.finalize();
 
-    // Format root hash as hex
     const hex_chars = "0123456789abcdef";
     var root_hex: [64]u8 = undefined;
-    for (current[0], 0..) |byte, bi| {
-        root_hex[bi * 2] = hex_chars[byte >> 4];
-        root_hex[bi * 2 + 1] = hex_chars[byte & 0x0f];
+    for (result.root, 0..) |byte_val, bi| {
+        root_hex[bi * 2] = hex_chars[byte_val >> 4];
+        root_hex[bi * 2 + 1] = hex_chars[byte_val & 0x0f];
     }
 
-    w.raw("\"root\":\"");
-    w.raw(&root_hex);
-    w.raw("\"");
-
-    var buf: [64]u8 = undefined;
-    const s = std.fmt.bufPrint(&buf, ",\"depth\":{d},\"leaf_count\":{d}", .{
-        depth, leaf_hashes.items.len,
-    }) catch "";
-    w.raw(s);
-    w.endSection();
+    b.setText(capnp.PTR_MERKLE_ROOT, &root_hex);
+    b.setU32(capnp.OFF_MERKLE_DEPTH, result.depth);
+    b.setU32(capnp.OFF_MERKLE_LEAVES, tree.leaf_count);
 }
 
-/// Exact dedup support — output SHA-256 for cross-document comparison by Chapel.
-fn stageExactDedup(w: *StagesWriter, sha256: *const [65]u8) void {
-    w.beginSection("exact_dedup");
-    w.raw("\"sha256\":");
-    w.writeJsonStr(std.mem.sliceTo(sha256, 0));
-    w.endSection();
+/// Exact dedup support — SHA-256 for cross-document comparison.
+fn stageExactDedup(b: *capnp.Builder, sha256: *const [65]u8) void {
+    b.setText(capnp.PTR_EXACT_SHA, std.mem.sliceTo(sha256, 0));
 }
 
-/// Near dedup support — output perceptual hash for Chapel comparison.
-/// Writes the same ahash computed by STAGE_PERCEPTUAL_HASH if run,
-/// or computes independently if perceptual_hash was not enabled.
-fn stageNearDedup(w: *StagesWriter, input_path: [*:0]const u8, content_kind: c_int) void {
-    w.beginSection("near_dedup");
-
+/// Near dedup support — perceptual hash for image comparison.
+fn stageNearDedup(b: *capnp.Builder, input_path: [*:0]const u8, content_kind: c_int) void {
     if (content_kind != CK_IMAGE) {
-        w.raw("\"status\":\"not_applicable\",\"reason\":\"not an image\"");
-        w.endSection();
+        b.setText(capnp.PTR_NEAR_STATUS, "not_applicable");
+        b.setText(capnp.PTR_NEAR_REASON, "not an image");
         return;
     }
 
-    // Compute perceptual hash (same as stagePerceptualHash)
     const pix = c.pixRead(input_path);
-    if (pix == null) {
-        w.raw("\"error\":\"cannot read image\"");
-        w.endSection();
-        return;
-    }
+    if (pix == null) return;
     defer c.pixDestroy(@constCast(&pix));
 
     const gray = c.pixConvertTo8(pix, 0);
-    if (gray == null) {
-        w.raw("\"error\":\"grayscale conversion failed\"");
-        w.endSection();
-        return;
-    }
+    if (gray == null) return;
     defer c.pixDestroy(@constCast(&gray));
 
     const pw: u32 = @intCast(c.pixGetWidth(gray));
     const ph: u32 = @intCast(c.pixGetHeight(gray));
-    if (pw < 8 or ph < 8) {
-        w.raw("\"error\":\"image too small\"");
-        w.endSection();
-        return;
-    }
+    if (pw < 8 or ph < 8) return;
 
     var values: [64]f64 = undefined;
     var total: f64 = 0.0;
@@ -924,123 +802,79 @@ fn stageNearDedup(w: *StagesWriter, input_path: [*:0]const u8, content_kind: c_i
         }
     }
 
-    const mean = total / 64.0;
+    const mean_val = total / 64.0;
     var hash: u64 = 0;
     for (0..64) |idx| {
-        if (values[idx] > mean) hash |= @as(u64, 1) << @as(u6, @intCast(idx));
+        if (values[idx] > mean_val) hash |= @as(u64, 1) << @as(u6, @intCast(idx));
     }
 
-    var hex_buf: [17]u8 = undefined;
+    var hex_buf: [16]u8 = undefined;
     const hex_chars = "0123456789abcdef";
     for (0..16) |hi| {
         const shift: u6 = @intCast((15 - hi) * 4);
         hex_buf[hi] = hex_chars[@as(usize, @intCast((hash >> shift) & 0xF))];
     }
-    w.raw("\"ahash\":\"");
-    w.raw(hex_buf[0..16]);
-    w.raw("\"");
-    w.endSection();
+    b.setText(capnp.PTR_NEAR_AHASH, &hex_buf);
 }
 
-/// Coordinate normalization — report CRS and bounding box from GDAL.
-fn stageCoordNormalize(w: *StagesWriter, input_path: [*:0]const u8) void {
-    w.beginSection("coordinates");
-
+/// Coordinate normalization — CRS and bounding box from GDAL.
+fn stageCoordNormalize(b: *capnp.Builder, input_path: [*:0]const u8) void {
     const dataset = c.GDALOpen(input_path, c.GA_ReadOnly);
-    if (dataset == null) {
-        w.raw("\"error\":\"cannot open geospatial file\"");
-        w.endSection();
-        return;
-    }
+    if (dataset == null) return;
     defer _ = c.GDALClose(dataset);
 
-    // Get CRS
     const proj = c.GDALGetProjectionRef(dataset);
     const proj_str = if (proj) |p| std.mem.span(p) else "";
 
-    // Get geotransform
     var gt: [6]f64 = undefined;
     _ = c.GDALGetGeoTransform(dataset, &gt);
 
     const x_size: f64 = @floatFromInt(c.GDALGetRasterXSize(dataset));
     const y_size: f64 = @floatFromInt(c.GDALGetRasterYSize(dataset));
 
-    // Compute bounding box in native CRS
     const min_x = gt[0];
     const max_x = gt[0] + gt[1] * x_size;
     const max_y = gt[3];
     const min_y = gt[3] + gt[5] * y_size;
 
-    w.raw("\"crs\":");
-    // Truncate CRS string if very long (WKT can be huge)
     const crs_display = if (proj_str.len > 200) proj_str[0..200] else proj_str;
-    w.writeJsonStr(crs_display);
-
-    var buf: [384]u8 = undefined;
-    const s = std.fmt.bufPrint(&buf, ",\"bounds\":{{\"min_x\":{d:.6},\"min_y\":{d:.6},\"max_x\":{d:.6},\"max_y\":{d:.6}}}", .{
-        min_x, min_y, max_x, max_y,
-    }) catch "";
-    w.raw(s);
-
-    var sz_buf: [64]u8 = undefined;
-    const sz = std.fmt.bufPrint(&sz_buf, ",\"raster_x\":{d:.0},\"raster_y\":{d:.0}", .{ x_size, y_size }) catch "";
-    w.raw(sz);
-    w.endSection();
+    b.setText(capnp.PTR_COORD_CRS, crs_display);
+    b.setF64(capnp.OFF_COORD_MINX, min_x);
+    b.setF64(capnp.OFF_COORD_MINY, min_y);
+    b.setF64(capnp.OFF_COORD_MAXX, max_x);
+    b.setF64(capnp.OFF_COORD_MAXY, max_y);
+    b.setF64(capnp.OFF_COORD_RASTX, x_size);
+    b.setF64(capnp.OFF_COORD_RASTY, y_size);
 }
 
 // ============================================================================
 // Stage Implementations — ML Stubs
 // ============================================================================
 
-/// Write a stub stage that requires an ML runtime not yet available.
-fn writeStub(w: *StagesWriter, name: []const u8, reason: []const u8) void {
-    w.beginSection(name);
-    w.raw("\"status\":\"not_available\",\"reason\":");
-    w.writeJsonStr(reason);
-    w.endSection();
+fn writeStub(b: *capnp.Builder, status_ptr: usize, reason_ptr: usize, reason: []const u8) void {
+    b.setText(status_ptr, "not_available");
+    b.setText(reason_ptr, reason);
 }
 
 // ============================================================================
 // Multi-Language OCR
 // ============================================================================
 
-/// Re-run OCR with a multi-language Tesseract configuration.
-/// Creates a temporary TessBaseAPI with "eng+fra+deu+spa+ita+por".
-fn stageMultiLangOcr(w: *StagesWriter, input_path: [*:0]const u8) void {
-    w.beginSection("multi_lang_ocr");
-
+fn stageMultiLangOcr(b: *capnp.Builder, input_path: [*:0]const u8) void {
     const tess = c.TessBaseAPICreate();
-    if (tess == null) {
-        w.raw("\"error\":\"cannot create Tesseract instance\"");
-        w.endSection();
-        return;
-    }
+    if (tess == null) return;
     defer c.TessBaseAPIDelete(tess);
 
-    // Initialise with multiple languages (common European set)
     if (c.TessBaseAPIInit3(tess, null, "eng+fra+deu+spa+ita+por") != 0) {
-        // Fallback: try English only if multi-lang models not installed
-        if (c.TessBaseAPIInit3(tess, null, "eng") != 0) {
-            w.raw("\"error\":\"Tesseract init failed\"");
-            w.endSection();
-            return;
-        }
+        if (c.TessBaseAPIInit3(tess, null, "eng") != 0) return;
     }
 
     const pix = c.pixRead(input_path);
-    if (pix == null) {
-        w.raw("\"error\":\"cannot read image\"");
-        w.endSection();
-        return;
-    }
+    if (pix == null) return;
     defer c.pixDestroy(@constCast(&pix));
 
     c.TessBaseAPISetImage2(tess, pix);
-    if (c.TessBaseAPIRecognize(tess, null) != 0) {
-        w.raw("\"error\":\"recognition failed\"");
-        w.endSection();
-        return;
-    }
+    if (c.TessBaseAPIRecognize(tess, null) != 0) return;
 
     const conf = c.TessBaseAPIMeanTextConf(tess);
     const text_ptr = c.TessBaseAPIGetUTF8Text(tess);
@@ -1049,7 +883,6 @@ fn stageMultiLangOcr(w: *StagesWriter, input_path: [*:0]const u8) void {
     if (text_ptr != null) {
         const text = std.mem.span(text_ptr);
         char_count = text.len;
-        // Count words
         var in_word = false;
         for (text) |ch| {
             if (ch == ' ' or ch == '\n' or ch == '\r' or ch == '\t') {
@@ -1062,12 +895,10 @@ fn stageMultiLangOcr(w: *StagesWriter, input_path: [*:0]const u8) void {
         c.TessDeleteText(text_ptr);
     }
 
-    var buf: [128]u8 = undefined;
-    const s = std.fmt.bufPrint(&buf, "\"languages\":\"eng+fra+deu+spa+ita+por\",\"confidence\":{d},\"words\":{d},\"chars\":{d}", .{
-        conf, word_count, char_count,
-    }) catch return;
-    w.raw(s);
-    w.endSection();
+    b.setText(capnp.PTR_MLANG_LANGS, "eng+fra+deu+spa+ita+por");
+    b.setI32(capnp.OFF_MLANG_CONF, @intCast(conf));
+    b.setU64(capnp.OFF_MLANG_WORDS, word_count);
+    b.setU64(capnp.OFF_MLANG_CHARS, char_count);
 }
 
 // ============================================================================
@@ -1075,13 +906,13 @@ fn stageMultiLangOcr(w: *StagesWriter, input_path: [*:0]const u8) void {
 // ============================================================================
 
 /// Run all enabled processing stages. Called from ddac_parse after base parse.
-/// Writes results to {output_path}.stages in JSON format.
+/// Writes results to {output_path}.stages.capnp in Cap'n Proto binary format.
 pub fn runStages(ctx: StageContext) void {
     if (ctx.stages == STAGE_NONE) return;
 
-    // Build stages output path: {output_path}.stages
+    // Build stages output path: {output_path}.stages.capnp
     const path_slice = std.mem.span(ctx.output_path);
-    const suffix = ".stages";
+    const suffix = ".stages.capnp";
     var path_buf: [4096]u8 = undefined;
     if (path_slice.len + suffix.len >= 4096) return;
     @memcpy(path_buf[0..path_slice.len], path_slice);
@@ -1092,21 +923,26 @@ pub fn runStages(ctx: StageContext) void {
     const file = std.fs.createFileAbsoluteZ(stages_path, .{}) catch return;
     defer file.close();
 
-    var w = StagesWriter.init(file);
-    w.begin();
+    // Initialise Cap'n Proto builder (64 KB stack buffer)
+    var buf: [65536]u8 align(8) = undefined;
+    var b = capnp.Builder.init(&buf);
+    b.initRoot();
+
+    // Write the stages bitmask so readers know which fields are populated
+    b.setU64(capnp.OFF_STAGES_MASK, ctx.stages);
 
     // ── Phase 1: Result-only stages (no extra I/O) ───────────────────
 
     if (ctx.stages & STAGE_PREMIS_METADATA != 0) {
-        stagePremisMetadata(&w, &ctx);
+        stagePremisMetadata(&b, &ctx);
     }
 
     if (ctx.stages & STAGE_EXACT_DEDUP != 0) {
-        stageExactDedup(&w, ctx.sha256);
+        stageExactDedup(&b, ctx.sha256);
     }
 
     if (ctx.stages & STAGE_OCR_CONFIDENCE != 0 and ctx.content_kind == CK_IMAGE and ctx.ocr_confidence >= 0) {
-        stageOcrConfidence(&w, ctx.ocr_confidence);
+        stageOcrConfidence(&b, ctx.ocr_confidence);
     }
 
     // ── Phase 2: Text-based stages (read extracted text) ─────────────
@@ -1120,43 +956,43 @@ pub fn runStages(ctx: StageContext) void {
 
         if (readExtractedText(ctx.output_path, arena.allocator())) |text| {
             if (ctx.stages & STAGE_LANGUAGE_DETECT != 0)
-                stageLanguageDetect(&w, text);
+                stageLanguageDetect(&b, text);
 
             if (ctx.stages & STAGE_READABILITY != 0)
-                stageReadability(&w, text);
+                stageReadability(&b, text);
 
             if (ctx.stages & STAGE_KEYWORDS != 0)
-                stageKeywords(&w, text);
+                stageKeywords(&b, text);
 
             if (ctx.stages & STAGE_CITATION_EXTRACT != 0)
-                stageCitationExtract(&w, text);
+                stageCitationExtract(&b, text);
         }
     }
 
     // ── Phase 3: Integrity stages (read output file) ─────────────────
 
     if (ctx.stages & STAGE_MERKLE_PROOF != 0) {
-        stageMerkleProof(&w, ctx.output_path);
+        stageMerkleProof(&b, ctx.output_path);
     }
 
     // ── Phase 4: PDF-specific stages ─────────────────────────────────
 
     if (ctx.stages & STAGE_TOC_EXTRACT != 0 and ctx.content_kind == CK_PDF) {
-        stageTocExtract(&w, ctx.input_path);
+        stageTocExtract(&b, ctx.input_path);
     }
 
     // ── Phase 5: Image-specific stages ───────────────────────────────
 
     if (ctx.stages & STAGE_PERCEPTUAL_HASH != 0 and ctx.content_kind == CK_IMAGE) {
-        stagePerceptualHash(&w, ctx.input_path);
+        stagePerceptualHash(&b, ctx.input_path);
     }
 
     if (ctx.stages & STAGE_NEAR_DEDUP != 0) {
-        stageNearDedup(&w, ctx.input_path, ctx.content_kind);
+        stageNearDedup(&b, ctx.input_path, ctx.content_kind);
     }
 
     if (ctx.stages & STAGE_MULTI_LANG_OCR != 0 and ctx.content_kind == CK_IMAGE) {
-        stageMultiLangOcr(&w, ctx.input_path);
+        stageMultiLangOcr(&b, ctx.input_path);
     }
 
     // ── Phase 6: AV-specific stages ──────────────────────────────────
@@ -1164,34 +1000,36 @@ pub fn runStages(ctx: StageContext) void {
     if (ctx.stages & STAGE_SUBTITLE_EXTRACT != 0 and
         (ctx.content_kind == CK_VIDEO or ctx.content_kind == CK_AUDIO))
     {
-        stageSubtitleExtract(&w, ctx.input_path);
+        stageSubtitleExtract(&b, ctx.input_path);
     }
 
     // ── Phase 7: Geospatial stages ───────────────────────────────────
 
     if (ctx.stages & STAGE_COORD_NORMALIZE != 0 and ctx.content_kind == CK_GEOSPATIAL) {
-        stageCoordNormalize(&w, ctx.input_path);
+        stageCoordNormalize(&b, ctx.input_path);
     }
 
     // ── Phase 8: ML stub stages ──────────────────────────────────────
 
     if (ctx.stages & STAGE_NER != 0)
-        writeStub(&w, "ner", "Requires ML runtime (spaCy/HuggingFace). Install and rebuild with -DNER_ENABLED.");
+        writeStub(&b, capnp.PTR_NER_STATUS, capnp.PTR_NER_REASON, "Requires ML runtime (spaCy/HuggingFace). Install and rebuild with -DNER_ENABLED.");
 
     if (ctx.stages & STAGE_WHISPER_TRANSCRIBE != 0)
-        writeStub(&w, "whisper_transcribe", "Requires Whisper model and CUDA/Metal runtime.");
+        writeStub(&b, capnp.PTR_WHISPER_STATUS, capnp.PTR_WHISPER_REASON, "Requires Whisper model and CUDA/Metal runtime.");
 
     if (ctx.stages & STAGE_IMAGE_CLASSIFY != 0)
-        writeStub(&w, "image_classify", "Requires image classification model (ResNet/ViT).");
+        writeStub(&b, capnp.PTR_IMGCLASS_STATUS, capnp.PTR_IMGCLASS_REASON, "Requires image classification model (ResNet/ViT).");
 
     if (ctx.stages & STAGE_LAYOUT_ANALYSIS != 0)
-        writeStub(&w, "layout_analysis", "Requires document layout model (LayoutLM/DiT).");
+        writeStub(&b, capnp.PTR_LAYOUT_STATUS, capnp.PTR_LAYOUT_REASON, "Requires document layout model (LayoutLM/DiT).");
 
     if (ctx.stages & STAGE_HANDWRITING_OCR != 0)
-        writeStub(&w, "handwriting_ocr", "Requires handwriting recognition model (TrOCR).");
+        writeStub(&b, capnp.PTR_HWOCR_STATUS, capnp.PTR_HWOCR_REASON, "Requires handwriting recognition model (TrOCR).");
 
     if (ctx.stages & STAGE_FORMAT_CONVERT != 0)
-        writeStub(&w, "format_convert", "Format conversion not yet implemented.");
+        writeStub(&b, capnp.PTR_FMTCONV_STATUS, capnp.PTR_FMTCONV_REASON, "Format conversion not yet implemented.");
 
-    w.end();
+    // ── Write Cap'n Proto message to file ─────────────────────────────
+
+    b.writeMessage(file) catch {};
 }

@@ -58,7 +58,7 @@ free h = primIO (prim__free (handlePtr h))
 |||   stage_flags - bitmask of processing stages (0 = base parse only)
 |||
 ||| Returns a raw pointer to a ddac_parse_result_t struct.
-||| Stage results (if any) written to {output_path}.stages in JSON.
+||| Stage results (if any) written to {output_path}.stages.capnp (Cap'n Proto binary).
 ||| In practice, Chapel reads the struct fields directly via extern record.
 export
 %foreign "C:ddac_parse, libdocudactyl_ffi"

@@ -61,10 +61,13 @@ module ProgressReporter {
       const eta = if rate > 0.0 then remaining: real / rate else 0.0;
       const failures = localeFailureCount.read();
 
-      writeln("[", elapsed:string, "s] ",
+      const timeouts = localeTimeoutCount.read();
+      const avgMs = if done > 0 then localeTotalMs.read(): real / done: real else 0.0;
+
+      writeln("[", formatDuration(elapsed), "] ",
               done, "/", totalDocs, " (", pct:string, "%) | ",
-              rate:string, " docs/s | ETA ", eta:string, "s | ",
-              failures, " failures");
+              rate:string, " docs/s | ETA ", formatDuration(eta), " | ",
+              failures, " fail, ", timeouts, " straggle | avg ", avgMs:string, "ms");
 
       // Check for abort condition
       if shouldAbort() {
@@ -80,7 +83,9 @@ module ProgressReporter {
     const pct = if totalDocs > 0 then (done: real / totalDocs: real) * 100.0 else 100.0;
     const rate = if elapsed > 0.0 then done: real / elapsed else 0.0;
     writeln("[DONE ] ", done, "/", totalDocs, " (", pct:string, "%) in ",
-            elapsed:string, "s (", rate:string, " docs/s)");
+            formatDuration(elapsed), " (", rate:string, " docs/s)");
+    writeln("[stats] ", faultSummary());
+    writeln("[types] ", contentTypeSummary());
   }
 
   /** Format a duration in seconds to human-readable HH:MM:SS. */

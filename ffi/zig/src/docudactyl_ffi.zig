@@ -18,10 +18,22 @@
 const std = @import("std");
 const stages = @import("stages.zig");
 const cache = @import("cache.zig");
+const dragonfly = @import("dragonfly.zig");
+const prefetch = @import("prefetch.zig");
+const conduit = @import("conduit.zig");
+const gpu_ocr = @import("gpu_ocr.zig");
+const hw_crypto = @import("hw_crypto.zig");
+const ml_inference = @import("ml_inference.zig");
 
 // Ensure submodule exports are included in the shared library
 comptime {
     _ = cache;
+    _ = dragonfly;
+    _ = prefetch;
+    _ = conduit;
+    _ = gpu_ocr;
+    _ = hw_crypto;
+    _ = ml_inference;
 }
 
 const c = @cImport({
