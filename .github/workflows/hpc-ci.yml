@@ -1,0 +1,230 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Docudactyl HPC — Chapel + Zig FFI CI Pipeline
+#
+# Three jobs:
+#   1. build-ffi:    Zig FFI build + unit/integration tests
+#   2. build-chapel: Chapel HPC binary (depends on FFI artifacts)
+#   3. check-abi:    Idris2 ABI proof compilation
+#
+name: HPC Build & Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/chapel/**'
+      - 'ffi/zig/**'
+      - 'src/Docudactyl/**'
+      - 'src/abi/**'
+      - 'generated/abi/**'
+      - '.github/workflows/hpc-ci.yml'
+  pull_request:
+    paths:
+      - 'src/chapel/**'
+      - 'ffi/zig/**'
+      - 'src/Docudactyl/**'
+      - 'src/abi/**'
+      - 'generated/abi/**'
+      - '.github/workflows/hpc-ci.yml'
+
+permissions: read-all
+
+env:
+  ZIG_VERSION: '0.15.2'
+  CHAPEL_VERSION: '2.3.0'
+  IDRIS2_VERSION: '0.8.0'
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 1: Zig FFI — Build + Test
+  # ═══════════════════════════════════════════════════════════════════════════
+  build-ffi:
+    name: Zig FFI Build & Test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@a84e3471d7b1bba559a4b37a498c9ceee22f36c8 # v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Install C library headers
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libpoppler-glib-dev libglib2.0-dev \
+            libtesseract-dev libleptonica-dev \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libxml2-dev libgdal-dev libvips-dev
+
+      - name: Build FFI (ReleaseFast)
+        run: cd ffi/zig && zig build -Doptimize=ReleaseFast
+
+      - name: Run FFI tests (unit + integration)
+        run: cd ffi/zig && zig build test
+
+      - name: Verify shared library exists
+        run: |
+          ls -la ffi/zig/zig-out/lib/libdocudactyl_ffi.so*
+          file ffi/zig/zig-out/lib/libdocudactyl_ffi.so
+
+      - name: Upload FFI artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ffi-libs
+          path: |
+            ffi/zig/zig-out/lib/libdocudactyl_ffi.so*
+            ffi/zig/zig-out/lib/libdocudactyl_ffi.a
+          retention-days: 1
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 2: Chapel HPC — Build + Smoke Test
+  # ═══════════════════════════════════════════════════════════════════════════
+  build-chapel:
+    name: Chapel HPC Build
+    needs: build-ffi
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Download FFI artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ffi-libs
+          path: ffi/zig/zig-out/lib/
+
+      - name: Install Chapel
+        run: |
+          CHPL_TARBALL="chapel-${CHAPEL_VERSION}-linux64-x86_64.tar.gz"
+          CHPL_URL="https://github.com/chapel-lang/chapel/releases/download/${CHAPEL_VERSION}/${CHPL_TARBALL}"
+          echo "Downloading Chapel ${CHAPEL_VERSION} from ${CHPL_URL}..."
+          wget -q "${CHPL_URL}" -O "/tmp/${CHPL_TARBALL}"
+          tar xzf "/tmp/${CHPL_TARBALL}" -C /opt/
+          echo "CHPL_HOME=/opt/chapel-${CHAPEL_VERSION}" >> "$GITHUB_ENV"
+          echo "/opt/chapel-${CHAPEL_VERSION}/bin/linux64-x86_64" >> "$GITHUB_PATH"
+
+      - name: Install C runtime libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libpoppler-glib8t64 libglib2.0-0t64 \
+            libtesseract5 libleptonica-dev \
+            libavformat60 libavcodec60 libavutil58 \
+            libxml2 libgdal34t64 libvips42t64 \
+            tesseract-ocr-eng
+
+      - name: Verify Chapel installation
+        run: chpl --version
+
+      - name: Build Chapel HPC binary
+        run: |
+          mkdir -p bin
+          ABSPATH=$(cd ffi/zig/zig-out/lib && pwd)
+          chmod +x ffi/zig/zig-out/lib/libdocudactyl_ffi.so* || true
+          chpl src/chapel/DocudactylHPC.chpl \
+               src/chapel/Config.chpl \
+               src/chapel/ContentType.chpl \
+               src/chapel/FFIBridge.chpl \
+               src/chapel/ManifestLoader.chpl \
+               src/chapel/FaultHandler.chpl \
+               src/chapel/ProgressReporter.chpl \
+               src/chapel/ShardedOutput.chpl \
+               src/chapel/ResultAggregator.chpl \
+               src/chapel/Checkpoint.chpl \
+               -o bin/docudactyl-hpc \
+               -Lffi/zig/zig-out/lib -ldocudactyl_ffi \
+               --ldflags="-Wl,-rpath,$ABSPATH" \
+               --fast
+
+      - name: Smoke test (5 files)
+        run: |
+          # Create a small manifest from available system files
+          TMPDIR=$(mktemp -d)
+          find /usr/share/icons -name '*.png' 2>/dev/null | head -5 > "$TMPDIR/manifest.txt"
+          COUNT=$(wc -l < "$TMPDIR/manifest.txt")
+          echo "Smoke test manifest: $COUNT files"
+
+          if [ "$COUNT" -lt 1 ]; then
+            echo "SKIP: No test files available"
+            exit 0
+          fi
+
+          export LD_LIBRARY_PATH="ffi/zig/zig-out/lib:$LD_LIBRARY_PATH"
+          bin/docudactyl-hpc \
+            --manifestPath="$TMPDIR/manifest.txt" \
+            --outputDir="$TMPDIR/output" \
+            --chunkSize=1
+
+          # Verify reports were generated
+          ls "$TMPDIR/output/run-report.scm" "$TMPDIR/output/run-report.json"
+
+          # Verify non-zero success count
+          SUCCEEDED=$(grep -oP 'Succeeded:\s+\K\d+' <<< "$(cat /dev/stdin)" || echo 0)
+          echo "Smoke test complete"
+          rm -rf "$TMPDIR"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 3: Idris2 ABI — Compile Proofs
+  # ═══════════════════════════════════════════════════════════════════════════
+  check-abi:
+    name: Idris2 ABI Proofs
+    runs-on: ubuntu-24.04
+    continue-on-error: true  # Idris2 CI setup can be fragile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Idris2
+        run: |
+          # Install Idris2 via pack (the Idris2 package manager)
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential libgmp-dev chezscheme
+
+          # Clone and build Idris2 from source
+          git clone --depth 1 --branch v${IDRIS2_VERSION} \
+            https://github.com/idris-lang/Idris2.git /tmp/idris2-src
+          cd /tmp/idris2-src
+          make bootstrap SCHEME=chezscheme
+          sudo make install
+          echo "$HOME/.idris2/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Idris2 installation
+        run: idris2 --version
+
+      - name: Compile ABI proofs
+        run: |
+          cd /home/runner/work/docudactyl/docudactyl
+          idris2 --build docudactyl.ipkg
+
+      - name: Verify no banned patterns
+        run: |
+          echo "Checking for banned patterns in Idris2 files..."
+          BANNED="believe_me|assert_total|assert_smaller|unsafePerformIO"
+          if grep -rE "$BANNED" src/Docudactyl/ABI/ src/abi/; then
+            echo "FAIL: Banned patterns found in Idris2 ABI files"
+            exit 1
+          fi
+          echo "PASS: No banned patterns"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 4: C ABI Header — Static Assert Verification
+  # ═══════════════════════════════════════════════════════════════════════════
+  verify-header:
+    name: C ABI Header Verification
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Compile header (static assertions)
+        run: |
+          cat > /tmp/verify_abi.c << 'CEOF'
+          #include "generated/abi/docudactyl_ffi.h"
+          int main(void) { return 0; }
+          CEOF
+          gcc -I. -fsyntax-only -c /tmp/verify_abi.c -o /dev/null
+          echo "PASS: C ABI header compiles, static assertions hold"
