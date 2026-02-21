@@ -1,4 +1,4 @@
-(* SPDX-FileCopyrightText: 2025 Hyperpolymath *)
+(* SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk> *)
 (* SPDX-License-Identifier: PMPL-1.0-or-later *)
 
 (** Docudactyl-scm: PDF to Scheme transformer.
@@ -18,7 +18,7 @@
 
 open Cmdliner
 
-let version = "0.1.0"
+let version = "0.4.0"
 
 (** Process a single input file *)
 let process_file input_path output_path minimal verbose =
@@ -112,7 +112,7 @@ let cmd =
     `P "Report bugs at https://github.com/hyperpolymath/docudactyl/issues";
 
     `S Manpage.s_authors;
-    `P "Hyperpolymath <hyperpolymath@proton.me>";
+    `P "Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>";
   ] in
   let info = Cmd.info "docudactyl-scm" ~version ~doc ~man in
   Cmd.v info Term.(ret (const process_file $ input_arg $ output_arg $ minimal_arg $ verbose_arg))

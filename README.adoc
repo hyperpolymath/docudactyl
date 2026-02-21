@@ -1,5 +1,5 @@
 = Docudactyl
-image:https://img.shields.io/badge/License-MPL_2.0-blue.svg[MPL-2.0-or-later,link="https://opensource.org/licenses/MPL-2.0"]
+image:https://img.shields.io/badge/License-PMPL_1.0-blue.svg[PMPL-1.0-or-later,link="https://github.com/hyperpolymath/palimpsest-license"]
 
 
 
@@ -17,7 +17,7 @@ image:https://img.shields.io/badge/Ada-2022-blue[Ada]
 
 == License & Philosophy
 
-This project must declare **MPL-2.0-or-later** for platform/tooling compatibility.
+This project is licensed under **PMPL-1.0-or-later** (Palimpsest License).
 
 Philosophy: **Palimpsest**. The Palimpsest-MPL (PMPL) text is provided in `license/PMPL-1.0.txt`, and the canonical source is the palimpsest-license repository.
 
@@ -378,7 +378,7 @@ This is a Tier 1 RSR project using:
 
 == License
 
-SPDX-License-Identifier: MPL-2.0-or-later
+SPDX-License-Identifier: PMPL-1.0-or-later
 
 == Links
 

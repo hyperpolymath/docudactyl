@@ -1,4 +1,4 @@
-; SPDX-FileCopyrightText: 2025 Hyperpolymath
+; SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
 ; SPDX-License-Identifier: PMPL-1.0-or-later
 
 (lang dune 3.0)
@@ -10,9 +10,9 @@
 (source
  (github hyperpolymath/docudactyl))
 
-(authors "Hyperpolymath <hyperpolymath@proton.me>")
+(authors "Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>")
 
-(maintainers "Hyperpolymath <hyperpolymath@proton.me>")
+(maintainers "Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>")
 
 (license "PMPL-1.0-or-later")
 

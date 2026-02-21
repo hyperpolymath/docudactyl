@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 Hyperpolymath
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
 # SPDX-License-Identifier: PMPL-1.0-or-later
 
 """
@@ -124,7 +124,7 @@ processed by Guile, Racket, or other Scheme implementations.
 """
 function export_scheme(doc::PDFDocument, filepath::String)
     open(filepath, "w") do io
-        println(io, ";; SPDX-FileCopyrightText: 2025 Hyperpolymath")
+        println(io, ";; SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>")
         println(io, ";; SPDX-License-Identifier: PMPL-1.0-or-later")
         println(io, ";;")
         println(io, ";; Docudactyl PDF extraction - Scheme export")

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 Hyperpolymath
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
 # SPDX-License-Identifier: PMPL-1.0-or-later
 
 """

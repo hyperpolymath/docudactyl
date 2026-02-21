@@ -1,4 +1,4 @@
--- SPDX-FileCopyrightText: 2025 Hyperpolymath
+-- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
 -- SPDX-License-Identifier: PMPL-1.0-or-later
 
 -- Docudactyl TUI: Terminal User Interface for PDF text extraction
@@ -18,7 +18,7 @@ with Document_Model;           use Document_Model;
 procedure Docudactyl_TUI is
 
    -- Application version
-   Version : constant String := "0.1.0";
+   Version : constant String := "0.4.0";
 
    -- Current state
    type View_Mode is (List_View, Document_View, Search_View, Help_View);

@@ -1,10 +1,10 @@
-# SPDX-FileCopyrightText: 2025 Hyperpolymath
-# SPDX-License-Identifier: MPL-2.0-or-later
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
+# SPDX-License-Identifier: PMPL-1.0-or-later
 
 name = "Docudactyl"
 uuid = "a7e3f2d1-8c4b-4e5a-9f6d-2b3c4a5e6f7d"
-authors = ["Hyperpolymath <hyperpolymath@proton.me>"]
-version = "0.1.0"
+authors = ["Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>"]
+version = "0.4.0"
 
 [deps]
 PDFIO = "4d0d745f-9d9a-5c48-8f81-b84e51d2c4f3"

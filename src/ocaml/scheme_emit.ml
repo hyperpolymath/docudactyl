@@ -1,4 +1,4 @@
-(* SPDX-FileCopyrightText: 2025 Hyperpolymath *)
+(* SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk> *)
 (* SPDX-License-Identifier: PMPL-1.0-or-later *)
 
 (** Scheme (S-expression) code emitter for PDF documents. *)
@@ -76,7 +76,7 @@ let emit_metadata meta =
 let emit_document doc =
   let pages_str = String.concat "\n" (List.map emit_page doc.pages) in
 
-  Printf.sprintf {|;; SPDX-FileCopyrightText: 2025 Hyperpolymath
+  Printf.sprintf {|;; SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
 ;; SPDX-License-Identifier: PMPL-1.0-or-later
 ;;
 ;; Docudactyl PDF extraction - Scheme representation
