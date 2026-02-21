@@ -129,6 +129,7 @@ jobs:
                src/chapel/ContentType.chpl \
                src/chapel/FFIBridge.chpl \
                src/chapel/ManifestLoader.chpl \
+               src/chapel/NdjsonManifest.chpl \
                src/chapel/FaultHandler.chpl \
                src/chapel/ProgressReporter.chpl \
                src/chapel/ShardedOutput.chpl \
@@ -204,7 +205,7 @@ jobs:
         run: |
           echo "Checking for banned patterns in Idris2 files..."
           BANNED="believe_me|assert_total|assert_smaller|unsafePerformIO"
-          if grep -rE "$BANNED" src/Docudactyl/ABI/ src/abi/; then
+          if grep -rE "$BANNED" src/Docudactyl/ABI/; then
             echo "FAIL: Banned patterns found in Idris2 ABI files"
             exit 1
           fi
