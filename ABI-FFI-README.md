@@ -1,6 +1,4 @@
-{{~ Aditionally delete this line and fill out the template below ~}}
-
-# {{PROJECT}} ABI/FFI Documentation
+# Docudactyl ABI/FFI Documentation
 
 ## Overview
 
@@ -9,377 +7,196 @@ This library follows the **Hyperpolymath RSR Standard** for ABI and FFI design:
 - **ABI (Application Binary Interface)** defined in **Idris2** with formal proofs
 - **FFI (Foreign Function Interface)** implemented in **Zig** for C compatibility
 - **Generated C headers** bridge Idris2 ABI to Zig FFI
-- **Any language** can call through standard C ABI
+- **Chapel HPC** calls through standard C ABI for distributed execution
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
 │  ABI Definitions (Idris2)                   │
-│  src/abi/                                   │
-│  - Types.idr      (Type definitions)        │
-│  - Layout.idr     (Memory layout proofs)    │
-│  - Foreign.idr    (FFI declarations)        │
+│  src/Docudactyl/ABI/                        │
+│  - Types.idr      (14 types with proofs)    │
+│  - Layout.idr     (5 struct layout proofs)  │
+│  - Foreign.idr    (51 FFI declarations)     │
 └─────────────────┬───────────────────────────┘
                   │
-                  │ generates (at compile time)
+                  │ generates (via Justfile recipe)
                   ▼
 ┌─────────────────────────────────────────────┐
 │  C Headers (auto-generated)                 │
-│  generated/abi/{{project}}.h                │
+│  generated/abi/docudactyl_ffi.h             │
 └─────────────────┬───────────────────────────┘
                   │
                   │ imported by
                   ▼
 ┌─────────────────────────────────────────────┐
 │  FFI Implementation (Zig)                   │
-│  ffi/zig/src/main.zig                       │
-│  - Implements C-compatible functions        │
-│  - Zero-cost abstractions                   │
-│  - Memory-safe by default                   │
+│  ffi/zig/src/docudactyl_ffi.zig + 9 modules│
+│  - 10 submodules (stages, capnp, cache,     │
+│    dragonfly, prefetch, conduit, gpu_ocr,   │
+│    hw_crypto, ml_inference)                 │
+│  - Links: Poppler, Tesseract, FFmpeg,       │
+│    libxml2, GDAL, libvips, LMDB            │
+│  - dlopen: ONNX Runtime, PaddleOCR, CUDA   │
 └─────────────────┬───────────────────────────┘
                   │
-                  │ compiled to lib{{project}}.so/.a
+                  │ compiled to libdocudactyl_ffi.so
                   ▼
 ┌─────────────────────────────────────────────┐
-│  Any Language via C ABI                     │
-│  - Rust, ReScript, Julia, Python, etc.     │
+│  Chapel HPC Engine via C ABI                │
+│  src/chapel/FFIBridge.chpl                  │
+│  - 51 extern proc declarations             │
+│  - Distributed across 64-512 locales       │
 └─────────────────────────────────────────────┘
 ```
 
 ## Directory Structure
 
 ```
-{{project}}/
+docudactyl/
 ├── src/
-│   ├── abi/                    # ABI definitions (Idris2)
-│   │   ├── Types.idr           # Core type definitions with proofs
-│   │   ├── Layout.idr          # Memory layout verification
-│   │   └── Foreign.idr         # FFI function declarations
-│   └── lib/                    # Core library (any language)
+│   └── Docudactyl/
+│       └── ABI/                  # ABI definitions (Idris2)
+│           ├── Types.idr         # 14 types: ContentKind, ParseStatus, MlStatus,
+│           │                     #   MlStage, ExecProvider, Sha256Tier, etc.
+│           ├── Layout.idr        # Struct layout proofs: ParseResult (952B),
+│           │                     #   MlResult (48B), CryptoCaps (16B)
+│           └── Foreign.idr       # 51 FFI declarations matching C header
 │
 ├── ffi/
-│   └── zig/                    # FFI implementation (Zig)
-│       ├── build.zig           # Build configuration
-│       ├── build.zig.zon       # Dependencies
+│   └── zig/                      # FFI implementation (Zig)
+│       ├── build.zig             # Build config (links 7 C libraries)
 │       ├── src/
-│       │   └── main.zig        # C-compatible FFI implementation
-│       ├── test/
-│       │   └── integration_test.zig
-│       └── include/
-│           └── {{project}}.h   # C header (optional, can be generated)
+│       │   ├── docudactyl_ffi.zig    # Core: init, free, parse, version
+│       │   ├── stages.zig            # 20 processing stages
+│       │   ├── capnp.zig             # Cap'n Proto serialisation
+│       │   ├── cache.zig             # LMDB L1 cache
+│       │   ├── dragonfly.zig         # Dragonfly L2 cache
+│       │   ├── prefetch.zig          # io_uring I/O prefetcher
+│       │   ├── conduit.zig           # Magic-byte detection + validation
+│       │   ├── gpu_ocr.zig           # GPU OCR (PaddleOCR/Tesseract CUDA)
+│       │   ├── hw_crypto.zig         # Hardware SHA-256 acceleration
+│       │   └── ml_inference.zig      # ONNX Runtime ML engine
+│       └── test/
+│           └── integration_test.zig  # 40+ C ABI compliance tests
 │
-├── generated/                  # Auto-generated files
+├── generated/                    # Auto-generated files
 │   └── abi/
-│       └── {{project}}.h       # Generated from Idris2 ABI
+│       └── docudactyl_ffi.h      # Generated from Zig FFI exports
 │
-└── bindings/                   # Language-specific wrappers (optional)
-    ├── rust/
-    ├── rescript/
-    └── julia/
+└── docudactyl.ipkg               # Idris2 package (3 modules)
 ```
 
-## Why Idris2 for ABI?
+## Proven Types (Idris2)
 
-### 1. **Formal Verification**
+The ABI layer formally proves:
 
-Idris2's dependent types allow proving properties about the ABI at compile-time:
+| Type | Variants | Proof |
+|------|----------|-------|
+| `ContentKind` | 7 (PDF, Image, Audio, Video, EPUB, GeoSpatial, Unknown) | Enum injectivity |
+| `ParseStatus` | 6 (Ok, Error, FileNotFound, ParseError, UnsupportedFormat, OutOfMemory) | Enum injectivity |
+| `MlStatus` | 5 (Ok, ModelNotFound, InferenceError, InputError, OnnxNotAvailable) | Enum injectivity |
+| `MlStage` | 5 (NER, Whisper, ImageClassify, Layout, Handwriting) | Enum injectivity |
+| `ExecProvider` | 4 (TensorRT, CUDA, OpenVINO, CPU) | Enum injectivity |
+| `Sha256Tier` | 3 (Dedicated, Avx2Buffer, Software) | Enum injectivity |
+| `OcrStatus` | 4 | Enum injectivity |
+| `GpuBackend` | 3 | Enum injectivity |
+| `ConduitValidation` | 4 | Enum injectivity |
 
-```idris
--- Prove struct size is correct
-public export
-exampleStructSize : HasSize ExampleStruct 16
+### Struct Layout Proofs
 
--- Prove field alignment is correct
-public export
-fieldAligned : Divides 8 (offsetOf ExampleStruct.field)
-
--- Prove ABI is platform-compatible
-public export
-abiCompatible : Compatible (ABI 1) (ABI 2)
-```
-
-### 2. **Type Safety**
-
-Encode invariants that C/Zig cannot express:
-
-```idris
--- Non-null pointer guaranteed at type level
-data Handle : Type where
-  MkHandle : (ptr : Bits64) -> {auto 0 nonNull : So (ptr /= 0)} -> Handle
-
--- Array with length proof
-data Buffer : (n : Nat) -> Type where
-  MkBuffer : Vect n Byte -> Buffer n
-```
-
-### 3. **Platform Abstraction**
-
-Platform-specific types with compile-time selection:
-
-```idris
-CInt : Platform -> Type
-CInt Linux = Bits32
-CInt Windows = Bits32
-
-CSize : Platform -> Type
-CSize Linux = Bits64
-CSize Windows = Bits64
-```
-
-### 4. **Safe Evolution**
-
-Prove that new ABI versions are backward-compatible:
-
-```idris
--- Compiler enforces compatibility
-abiUpgrade : ABI 1 -> ABI 2
-abiUpgrade old = MkABI2 {
-  -- Must preserve all v1 fields
-  v1_compat = old,
-  -- Can add new fields
-  new_features = defaults
-}
-```
-
-## Why Zig for FFI?
-
-### 1. **C ABI Compatibility**
-
-Zig exports C-compatible functions naturally:
-
-```zig
-export fn library_function(param: i32) i32 {
-    return param * 2;
-}
-```
-
-### 2. **Memory Safety**
-
-Compile-time safety without runtime overhead:
-
-```zig
-// Null check enforced at compile time
-const handle = init() orelse return error.InitFailed;
-defer free(handle);
-```
-
-### 3. **Cross-Compilation**
-
-Built-in cross-compilation to any platform:
-
-```bash
-zig build -Dtarget=x86_64-linux
-zig build -Dtarget=aarch64-macos
-zig build -Dtarget=x86_64-windows
-```
-
-### 4. **Zero Dependencies**
-
-No runtime, no libc required (unless explicitly needed):
-
-```zig
-// Minimal binary size
-pub const lib = @import("std");
-// Only includes what you use
-```
+| Struct | Size | Alignment | Proof |
+|--------|------|-----------|-------|
+| `ParseResult` | 952 bytes | 8-byte (LP64) | `Divides 8 952 = MkDivides 119` |
+| `MlResult` | 48 bytes | 8-byte | `Divides 8 48 = MkDivides 6` |
+| `CryptoCaps` | 16 bytes | 1-byte | Field offset chain |
+| `OcrResult` | 48 bytes | — | Size assertion |
+| `ConduitResult` | 88 bytes | — | Size assertion |
 
 ## Building
 
 ### Build FFI Library
 
 ```bash
-cd ffi/zig
-zig build                         # Build debug
-zig build -Doptimize=ReleaseFast  # Build optimized
-zig build test                    # Run tests
+just build-ffi                    # Build via Justfile
+# or directly:
+cd ffi/zig && zig build -Doptimize=ReleaseFast
 ```
 
-### Generate C Header from Idris2 ABI
+### Verify Idris2 ABI Proofs
 
 ```bash
-cd src/abi
-idris2 --cg c-header Types.idr -o ../../generated/abi/{{project}}.h
+just build-idris
+# or directly:
+idris2 --build docudactyl.ipkg
 ```
 
-### Cross-Compile
+### Generate C Header
 
 ```bash
-cd ffi/zig
-
-# Linux x86_64
-zig build -Dtarget=x86_64-linux
-
-# macOS ARM64
-zig build -Dtarget=aarch64-macos
-
-# Windows x86_64
-zig build -Dtarget=x86_64-windows
+just generate-abi-header
 ```
 
-## Usage
-
-### From C
-
-```c
-#include "{{project}}.h"
-
-int main() {
-    void* handle = {{project}}_init();
-    if (!handle) return 1;
-
-    int result = {{project}}_process(handle, 42);
-    if (result != 0) {
-        const char* err = {{project}}_last_error();
-        fprintf(stderr, "Error: %s\n", err);
-    }
-
-    {{project}}_free(handle);
-    return 0;
-}
-```
-
-Compile with:
-```bash
-gcc -o example example.c -l{{project}} -L./zig-out/lib
-```
-
-### From Idris2
-
-```idris
-import {{PROJECT}}.ABI.Foreign
-
-main : IO ()
-main = do
-  Just handle <- init
-    | Nothing => putStrLn "Failed to initialize"
-
-  Right result <- process handle 42
-    | Left err => putStrLn $ "Error: " ++ errorDescription err
-
-  free handle
-  putStrLn "Success"
-```
-
-### From Rust
-
-```rust
-#[link(name = "{{project}}")]
-extern "C" {
-    fn {{project}}_init() -> *mut std::ffi::c_void;
-    fn {{project}}_free(handle: *mut std::ffi::c_void);
-    fn {{project}}_process(handle: *mut std::ffi::c_void, input: u32) -> i32;
-}
-
-fn main() {
-    unsafe {
-        let handle = {{project}}_init();
-        assert!(!handle.is_null());
-
-        let result = {{project}}_process(handle, 42);
-        assert_eq!(result, 0);
-
-        {{project}}_free(handle);
-    }
-}
-```
-
-### From Julia
-
-```julia
-const lib{{project}} = "lib{{project}}"
-
-function init()
-    handle = ccall((:{{project}}_init, lib{{project}}), Ptr{Cvoid}, ())
-    handle == C_NULL && error("Failed to initialize")
-    handle
-end
-
-function process(handle, input)
-    result = ccall((:{{project}}_process, lib{{project}}), Cint, (Ptr{Cvoid}, UInt32), handle, input)
-    result
-end
-
-function cleanup(handle)
-    ccall((:{{project}}_free, lib{{project}}), Cvoid, (Ptr{Cvoid},), handle)
-end
-
-# Usage
-handle = init()
-try
-    result = process(handle, 42)
-    println("Result: $result")
-finally
-    cleanup(handle)
-end
-```
-
-## Testing
-
-### Unit Tests (Zig)
+### Run Tests
 
 ```bash
-cd ffi/zig
-zig build test
+just test-ffi     # 40+ integration tests against C ABI
+just test-idris   # Verify Idris2 proofs compile
 ```
 
-### Integration Tests
+## C API Summary
 
-```bash
-cd ffi/zig
-zig build test-integration
-```
+All 51 functions use the `ddac_` prefix:
 
-### ABI Verification (Idris2)
+| Category | Functions |
+|----------|-----------|
+| **Core lifecycle** | `ddac_init`, `ddac_free`, `ddac_parse`, `ddac_version` |
+| **Handle setters** | `ddac_set_ml_handle`, `ddac_set_gpu_ocr_handle` |
+| **LMDB cache** | `ddac_cache_init`, `ddac_cache_free`, `ddac_cache_lookup`, `ddac_cache_store`, `ddac_cache_count`, `ddac_cache_sync` |
+| **Dragonfly** | `ddac_dragonfly_connect`, `ddac_dragonfly_close`, `ddac_dragonfly_lookup`, `ddac_dragonfly_store`, `ddac_dragonfly_count` |
+| **I/O prefetcher** | `ddac_prefetch_init`, `ddac_prefetch_hint`, `ddac_prefetch_done`, `ddac_prefetch_free`, `ddac_prefetch_inflight` |
+| **ML inference** | `ddac_ml_init`, `ddac_ml_free`, `ddac_ml_available`, `ddac_ml_provider`, `ddac_ml_provider_name`, `ddac_ml_set_model_dir`, `ddac_ml_run_stage`, `ddac_ml_stats`, `ddac_ml_result_size`, `ddac_ml_stage_count`, `ddac_ml_model_name` |
+| **GPU OCR** | `ddac_gpu_ocr_init`, `ddac_gpu_ocr_free`, `ddac_gpu_ocr_backend`, `ddac_gpu_ocr_submit`, `ddac_gpu_ocr_flush`, `ddac_gpu_ocr_results_ready`, `ddac_gpu_ocr_collect`, `ddac_gpu_ocr_stats`, `ddac_gpu_ocr_max_batch`, `ddac_gpu_ocr_result_size` |
+| **Hardware crypto** | `ddac_crypto_detect`, `ddac_crypto_sha256_tier`, `ddac_crypto_sha256_name`, `ddac_crypto_batch_sha256`, `ddac_crypto_caps_size` |
+| **Conduit** | `ddac_conduit_process`, `ddac_conduit_batch`, `ddac_conduit_result_size` |
 
-```idris
--- Compile-time verification
-%runElab verifyABI
+## Usage from Chapel
 
--- Runtime checks
-main : IO ()
-main = do
-  verifyLayoutsCorrect
-  verifyAlignmentsCorrect
-  putStrLn "ABI verification passed"
+```chapel
+extern proc ddac_init(): c_ptr(void);
+extern proc ddac_free(handle: c_ptr(void)): void;
+extern proc ddac_parse(handle: c_ptr(void), inputPath: c_ptrConst(c_char),
+                       outputPath: c_ptrConst(c_char),
+                       outputFormat: c_ptrConst(c_char)): ddac_parse_result_t;
+
+// In forall loop:
+var handle = ddac_init();
+defer ddac_free(handle);
+var result = ddac_parse(handle, path.c_str(), outPath.c_str(), "scheme".c_str());
 ```
 
 ## Contributing
 
 When modifying the ABI/FFI:
 
-1. **Update ABI first** (`src/abi/*.idr`)
-   - Modify type definitions
-   - Update proofs
-   - Ensure backward compatibility
-
-2. **Generate C header**
-   ```bash
-   idris2 --cg c-header src/abi/Types.idr -o generated/abi/{{project}}.h
-   ```
-
-3. **Update FFI implementation** (`ffi/zig/src/main.zig`)
-   - Implement new functions
-   - Match ABI types exactly
-
-4. **Add tests**
-   - Unit tests in Zig
-   - Integration tests
-   - ABI verification tests
-
-5. **Update documentation**
-   - Function signatures
-   - Usage examples
-   - Migration guide (if breaking changes)
+1. **Update Idris2 ABI first** (`src/Docudactyl/ABI/*.idr`)
+   - Add/modify type definitions with proofs
+   - Update struct layout proofs
+   - Add FFI declarations
+2. **Update Zig FFI** (`ffi/zig/src/`)
+   - Implement new functions matching C ABI
+   - Ensure `comptime` assertions match Idris2 proofs
+3. **Regenerate C header** (`just generate-abi-header`)
+4. **Add integration tests** (`ffi/zig/test/integration_test.zig`)
+5. **Update Chapel extern declarations** (`src/chapel/FFIBridge.chpl`)
 
 ## License
 
-{{LICENSE}}
+SPDX-License-Identifier: PMPL-1.0-or-later
 
 ## See Also
 
 - [Idris2 Documentation](https://idris2.readthedocs.io)
 - [Zig Documentation](https://ziglang.org/documentation/master/)
+- [Chapel Documentation](https://chapel-lang.org/docs/)
 - [Rhodium Standard Repositories](https://github.com/hyperpolymath/rhodium-standard-repositories)
-- [FFI Migration Guide](../ffi-migration-guide.md)
-- [ABI Migration Guide](../abi-migration-guide.md)

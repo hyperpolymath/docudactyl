@@ -1,17 +1,16 @@
 = Docudactyl
 image:https://img.shields.io/badge/License-PMPL_1.0-blue.svg[PMPL-1.0-or-later,link="https://github.com/hyperpolymath/palimpsest-license"]
 
-
-
-
 :toc:
 :sectnums:
 :source-highlighter: rouge
 
 // Badges
 image:https://img.shields.io/badge/RSR-Tier%201-gold[RSR Tier 1]
-image:https://img.shields.io/badge/Phase-Implementation-yellow[Phase]
-image:https://img.shields.io/badge/Julia-1.9+-9558B2?logo=julia[Julia]
+image:https://img.shields.io/badge/Phase-v0.4.0-green[Phase]
+image:https://img.shields.io/badge/Chapel-2.3+-4E9A06?logo=data:image/svg+xml;base64,[Chapel]
+image:https://img.shields.io/badge/Zig-0.15+-F7A41D?logo=zig[Zig]
+image:https://img.shields.io/badge/Idris2-0.8+-5E5086[Idris2]
 image:https://img.shields.io/badge/OCaml-4.14+-EC6813?logo=ocaml[OCaml]
 image:https://img.shields.io/badge/Ada-2022-blue[Ada]
 
@@ -19,240 +18,148 @@ image:https://img.shields.io/badge/Ada-2022-blue[Ada]
 
 This project is licensed under **PMPL-1.0-or-later** (Palimpsest License).
 
-Philosophy: **Palimpsest**. The Palimpsest-MPL (PMPL) text is provided in `license/PMPL-1.0.txt`, and the canonical source is the palimpsest-license repository.
+The full licence text is in `license/PMPL-1.0.txt`. The canonical source is the https://github.com/hyperpolymath/palimpsest-license[palimpsest-license] repository.
 
 == Overview
 
-**Docudactyl** is a multi-language PDF text extraction and transformation toolkit designed for:
-
-* **Parallel processing** of large document collections
-* **Data analysis** on extracted content
-* **Machine-readable transformation** to Scheme (S-expressions)
-* **Interactive exploration** via terminal UI
-
-The tool recovers text from poorly redacted PDF files where visual redaction (black rectangles) was applied without removing the underlying text data from the PDF stream.
+**Docudactyl** is a multi-format HPC document extraction engine designed for British Library scale (~170 million items). It processes PDFs, images, audio, video, EPUB, and geospatial data across hundreds of cluster nodes.
 
 === Architecture
 
 [source]
 ----
-┌─────────────────────────────────────────────────────────────────┐
-│                        Docudactyl                                │
-├─────────────────┬─────────────────────┬─────────────────────────┤
-│     Julia       │       OCaml         │         Ada             │
-│  (Extraction)   │   (Transformer)     │        (TUI)            │
-├─────────────────┼─────────────────────┼─────────────────────────┤
-│ • PDF parsing   │ • PDF → Scheme      │ • Interactive viewer    │
-│ • Parallel proc │ • JSON → Scheme     │ • Document navigation   │
-│ • Data analysis │ • S-expr generation │ • Search interface      │
-│ • Export (CSV,  │ • Accessor funcs    │ • Analysis display      │
-│   JSON, Scheme) │                     │                         │
-└─────────────────┴─────────────────────┴─────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                    Chapel HPC Orchestrator                       │
+│             (64-512 locales, dynamic load balancing)             │
+├──────────────────────────────────────────────────────────────────┤
+│  Conduit    │  L1/L2 Cache  │  Checkpoint  │  Progress Reporter │
+│  (validate) │  (LMDB+DFly)  │  (resume)    │  (ETA, rate)       │
+├──────────────────────────────────────────────────────────────────┤
+│                       Zig FFI Layer                              │
+│              (51 C-exported functions, zero overhead)            │
+├────────┬──────────┬──────────┬──────────┬──────────┬────────────┤
+│Poppler │Tesseract │ FFmpeg   │ libxml2  │  GDAL    │  libvips   │
+│ (PDF)  │  (OCR)   │(AV meta) │ (EPUB)   │  (Geo)   │  (Image)   │
+├────────┴──────────┴──────────┴──────────┴──────────┴────────────┤
+│  dlopen: ONNX Runtime (ML) │ PaddleOCR (GPU OCR) │ CUDA        │
+├──────────────────────────────────────────────────────────────────┤
+│  Idris2 ABI Proofs (14 types, 5 struct layouts, 51 FFI decls)  │
+└──────────────────────────────────────────────────────────────────┘
+
+Offline:  OCaml docudactyl-scm (JSON/text → Scheme S-expressions)
+Viewer:   Ada TUI (interactive document inspection)
+Legacy:   Julia extraction scripts (replaced by Chapel pipeline)
 ----
+
+=== Performance Estimates (British Library, 170M items)
+
+[cols="1,2"]
+|===
+|Scenario |Estimate
+
+|Cold run (256 nodes + GPU)
+|~3.7 hours
+
+|Warm run (L1+L2 cache)
+|~4.4 minutes
+
+|Incremental (5% new files)
+|~8 minutes
+|===
 
 == Quick Start
 
 [source,bash]
 ----
-# Install dependencies
-just deps
+# Verify dependencies
+just deps-check
 
-# Build all components
-just build
+# Build Zig FFI + Chapel binary
+just build-hpc
 
-# Extract text from a PDF
-just extract document.pdf -o output.json -f json
+# Run all tests
+just test-hpc
 
-# Transform to Scheme
-just transform output.json output.scm
+# Process a directory of documents
+just generate-manifest /path/to/documents manifest.txt
+bin/docudactyl-hpc --manifestPath=manifest.txt --outputDir=output/
 
-# Or run the full pipeline
-just pipeline document.pdf
-
-# Launch the TUI viewer
-just tui output.json
+# Or on an HPC cluster (64 nodes)
+sbatch deploy/slurm-docudactyl.sh
 ----
 
 == Components
 
-=== Julia: Core Extraction Engine
+=== Chapel: HPC Engine (hot path)
 
-The Julia component provides high-performance PDF text extraction with parallel processing support.
+The Chapel component distributes document processing across cluster nodes with dynamic load balancing.
 
-[source,julia]
-----
-using Docudactyl
+Modules: Config, ContentType, FFIBridge, ManifestLoader, NdjsonManifest, FaultHandler, ProgressReporter, ShardedOutput, ResultAggregator, Checkpoint, DocudactylHPC.
 
-# Single file extraction
-result = extract_text("document.pdf")
-if result.success
-    println(text_content(result.document))
-end
+=== Zig FFI: Parser Dispatch Layer
 
-# Parallel batch processing
-using Distributed
-addprocs(4)
-@everywhere using Docudactyl
+10 submodules providing a unified C ABI for 7 content types and 20 processing stages:
 
-files = readdir("pdfs/", join=true)
-results = parallel_extract(files)
+* **Core**: `docudactyl_ffi.zig` -- init, free, parse, version (dispatches by content type)
+* **Stages**: 20 analysis stages with Cap'n Proto output (language, readability, keywords, citations, OCR confidence, perceptual hash, TOC, NER, Whisper, image classify, layout, handwriting, etc.)
+* **Cache**: L1 LMDB per-locale (zero-copy mmap) + L2 Dragonfly cross-locale
+* **Conduit**: Magic-byte content detection (15 formats), SHA-256, validation
+* **GPU OCR**: PaddleOCR CUDA > Tesseract CUDA > CPU (via dlopen)
+* **ML Inference**: ONNX Runtime -- NER, Whisper, ImageClassify, Layout, Handwriting (TensorRT > CUDA > OpenVINO > CPU)
+* **Hardware Crypto**: SHA-NI, AVX2, AVX-512, AES-NI, ARM SHA2 acceleration
+* **I/O Prefetch**: io_uring (Linux 5.6+) with posix_fadvise fallback
 
-# Analysis
-stats = analyze_content(result.document)
-println("Words: $(stats.total_words)")
-println("Unique: $(stats.unique_words)")
+=== Idris2: Formal ABI Proofs
 
-# Export to Scheme
-export_scheme(result.document, "output.scm")
-----
+Dependent types proving struct layout, alignment, and enum correctness:
 
-==== Features
+* 14 proven types (ContentKind, ParseStatus, MlStatus, MlStage, ExecProvider, Sha256Tier, etc.)
+* 5 struct layout proofs (ParseResult 952B, MlResult 48B, CryptoCaps 16B, OcrResult 48B, ConduitResult 88B)
+* 51 FFI declarations matching the C header 1:1
 
-* **Parallel Processing**: Distribute extraction across multiple cores
-* **Position Preservation**: Maintains text block coordinates for layout reconstruction
-* **Multiple Formats**: Export to CSV, JSON, plain text, or Scheme
-* **Statistical Analysis**: Word frequency, coverage estimation, comparative analysis
+=== OCaml: Offline Scheme Transformer
 
-=== OCaml: Scheme Transformer
-
-The OCaml component transforms extracted documents into machine-readable Scheme (S-expression) format.
+Transforms extracted JSON/text into machine-readable Scheme S-expressions. Not in the HPC hot path.
 
 [source,bash]
 ----
-# From PDF directly
 docudactyl-scm document.pdf -o document.scm
-
-# From Julia JSON output
 docudactyl-scm extracted.json -o extracted.scm
-
-# Minimal output (data only, no helper functions)
-docudactyl-scm --minimal document.pdf
-----
-
-==== Output Format
-
-The Scheme output includes the document structure and accessor functions:
-
-[source,scheme]
-----
-(define docudactyl-document
-  `((metadata
-     (filepath . "document.pdf")
-     (sha256 . "abc123...")
-     (extracted-at . "2025-12-27T10:00:00Z")
-     (pdf-metadata
-       (title . "Example Document")
-       (author . "Unknown")))
-
-    (statistics
-     (total-pages . 10)
-     (total-words . 5000))
-
-    (pages
-      ((page-number . 1)
-       (dimensions (width . 612.0) (height . 792.0))
-       (lines
-         "First line of text"
-         "Second line of text")
-       (blocks
-         ((text . "First")
-          (bounds (x0 . 72.0) (y0 . 72.0) (x1 . 100.0) (y1 . 84.0))
-          (font-size . 12.0)))))))
-
-;; Accessor functions
-(define (docudactyl-get-pages doc) ...)
-(define (docudactyl-page-text page) ...)
-(define (docudactyl-document-text doc) ...)
 ----
 
 === Ada: Terminal UI
 
-The Ada component provides an interactive terminal interface for document exploration.
+Interactive viewer for inspecting extracted documents.
 
 [source,bash]
 ----
-# Launch TUI with a document
 docudactyl-tui extracted.json
 ----
 
-==== Keybindings
-
-[cols="1,3"]
-|===
-|Key |Action
-
-|`q`, `Esc`
-|Quit application
-
-|`?`
-|Show help
-
-|`/`
-|Search in document
-
-|`j`, `Down`
-|Scroll down
-
-|`k`, `Up`
-|Scroll up
-
-|`n`, `PgDn`
-|Next page
-
-|`p`, `PgUp`
-|Previous page
-
-|`g`
-|Go to first page
-
-|`G`
-|Go to last page
-
-|`Tab`
-|Switch view mode
-
-|`a`
-|Show analysis
-|===
-
 == Justfile Recipes
-
-The project uses https://just.systems/[just] as a task runner.
 
 [source,bash]
 ----
-# Show all recipes
-just
-
 # Build
-just build            # Build all components
-just build-julia      # Build Julia only
-just build-ocaml      # Build OCaml only
-just build-ada        # Build Ada only
-
-# Run
-just extract <pdf>    # Extract text from PDF
-just transform <in>   # Transform to Scheme
-just tui [file]       # Launch TUI
-just pipeline <pdf>   # Full extraction pipeline
-just repl             # Julia REPL
-
-# Parallel processing
-just parallel-extract <dir> [workers]
+just build-hpc        # Zig FFI + Chapel binary
+just build-ffi        # Zig FFI only
+just build-idris      # Idris2 ABI proofs
+just build-ocaml      # OCaml transformer
+just build-ada        # Ada TUI
 
 # Test
-just test             # Run all tests
-just test-julia       # Julia tests only
-just test-ocaml       # OCaml tests only
+just test-hpc         # All HPC tests (FFI + error paths)
+just test-ffi         # Zig integration tests (40+ tests)
+just test-scale       # Scale test (2105+ files)
+just test-idris       # Idris2 proofs compile
+just test-ocaml       # OCaml tests
+just test-ada         # Ada build check
 
-# Dependencies
-just deps             # Install all dependencies
-just deps-julia       # Julia dependencies
-just deps-ocaml       # OCaml dependencies
-
-# Utilities
-just loc              # Count lines of code
-just clean            # Clean build artifacts
+# Deploy
+just deps-check       # Verify dependencies
+just generate-manifest <dir> [output]
+just generate-abi-header
+just loc              # Lines of code
 ----
 
 == Directory Structure
@@ -261,120 +168,67 @@ just clean            # Clean build artifacts
 ----
 docudactyl/
 ├── src/
-│   ├── julia/               # Julia extraction engine
-│   │   ├── Project.toml     # Package manifest
-│   │   ├── Docudactyl.jl    # Main module
-│   │   ├── extract.jl       # PDF extraction
-│   │   ├── parallel.jl      # Parallel processing
-│   │   ├── analysis.jl      # Data analysis
-│   │   ├── export.jl        # Export formats
-│   │   └── cli.jl           # Command-line interface
-│   │
-│   ├── ocaml/               # OCaml transformer
-│   │   ├── dune-project     # Dune project
-│   │   ├── dune             # Build config
-│   │   ├── docudactyl_scm.ml    # Main entry
-│   │   ├── document_types.ml    # Type definitions
-│   │   ├── pdf_parser.ml        # PDF/JSON parsing
-│   │   └── scheme_emit.ml       # Scheme generation
-│   │
-│   └── ada/                 # Ada TUI
-│       ├── docudactyl.gpr   # GNAT project
-│       ├── docudactyl_tui.adb   # Main TUI
-│       ├── terminal_utils.ads   # Terminal handling
-│       ├── terminal_utils.adb
-│       ├── document_model.ads   # Document types
-│       └── document_model.adb
+│   ├── chapel/                # HPC engine (11 modules)
+│   ├── Docudactyl/ABI/        # Idris2 ABI proofs (3 modules)
+│   ├── ocaml/                 # Offline Scheme transformer
+│   ├── ada/                   # Terminal UI
+│   └── julia/                 # Legacy extraction (replaced)
 │
-├── examples/                # Example documents
-├── docs/                    # Documentation
-├── justfile                 # Task runner
-└── README.adoc              # This file
+├── ffi/zig/                   # Zig FFI layer (10 submodules)
+│   ├── src/                   # Source
+│   └── test/                  # Integration tests
+│
+├── generated/abi/             # Auto-generated C header
+├── schema/                    # Cap'n Proto schema
+├── deploy/                    # Containerfile + Slurm script
+├── contractiles/              # K9 contractile configs
+├── .machine_readable/         # SCM checkpoint files
+├── Justfile                   # Task runner
+└── docudactyl.ipkg            # Idris2 package
 ----
 
 == Requirements
 
 === System Dependencies
 
-* **Julia** 1.9+ with packages: PDFIO, DataFrames, CSV, JSON3, ArgParse
-* **OCaml** 4.14+ with packages: camlpdf, yojson, cmdliner, dune
-* **Ada** GNAT (GCC) with gprbuild
+* **Chapel** 2.3+ (HPC engine)
+* **Zig** 0.15+ (FFI layer)
+* **Idris2** 0.8+ (ABI proofs)
+* **C libraries**: Poppler, Tesseract, FFmpeg, libxml2, GDAL, libvips, LMDB
+* **Optional**: ONNX Runtime, PaddleOCR, CUDA (for ML/GPU features)
+* **OCaml** 4.14+ (offline Scheme transformer)
+* **Ada** GNAT/gprbuild (terminal UI)
 
-=== Installation via Guix
+=== Container Deployment
 
 [source,bash]
 ----
-guix shell -D -f guix.scm
-just deps
-just build
+podman build -f deploy/Containerfile -t docudactyl-hpc .
+podman run --rm -v /data/manifest.txt:/manifest.txt:ro \
+                 -v /data/output:/output \
+                 docudactyl-hpc --manifestPath=/manifest.txt
 ----
 
-== Use Cases
+=== Cluster Deployment (Slurm)
 
-=== Document Verification
-
-Verify that redaction was properly applied:
-
-[source,julia]
+[source,bash]
 ----
-result = extract_text("redacted.pdf")
-if result.success
-    text = text_content(result.document)
-    if !isempty(text)
-        println("WARNING: Text found under redactions!")
-        println(text)
-    end
-end
-----
-
-=== Batch Analysis
-
-Analyze a collection of documents:
-
-[source,julia]
-----
-results = parallel_extract_dir("documents/"; recursive=true)
-summary = batch_process(results; output_dir="analysis/", format=:csv)
-println("Processed $(summary.total) documents in $(summary.extraction_time_s)s")
-----
-
-=== Lisp Processing
-
-Process extracted documents in Guile Scheme:
-
-[source,scheme]
-----
-(load "document.scm")
-
-;; Get all text
-(define text (docudactyl-document-text docudactyl-document))
-
-;; Search for patterns
-(define matches (docudactyl-search docudactyl-document "confidential"))
-
-;; Access specific pages
-(define page-1 (docudactyl-get-page docudactyl-document 1))
-(display (docudactyl-page-text page-1))
+# Edit deploy/slurm-docudactyl.sh for your cluster
+sbatch deploy/slurm-docudactyl.sh
 ----
 
 == Ethical Use
 
 This tool is designed for:
 
-* Document analysis and archival review
+* Document analysis and archival processing at national library scale
 * Research and verification of redaction practices
 * Accessibility improvements for PDF content
-* Data recovery from improperly redacted public documents
-
-**Important**: This tool does not bypass encryption, OCR hidden images, or circumvent actual security measures. It only extracts text that remains in the PDF stream but is visually obscured.
+* Multi-format metadata extraction and cataloguing
 
 == RSR Compliance
 
-This is a Tier 1 RSR project using:
-
-* **Julia**: Batch processing (per RSR allowance)
-* **OCaml**: Language-specific tooling (AffineScript compiler category)
-* **Ada**: Safety-critical systems
+This is a Tier 1 RSR project. The hot path uses Chapel + Zig (systems languages). Legacy components (Julia, OCaml, Ada) serve offline/auxiliary roles.
 
 == License
 
@@ -384,4 +238,3 @@ SPDX-License-Identifier: PMPL-1.0-or-later
 
 * https://github.com/hyperpolymath/docudactyl[GitHub Repository]
 * https://rhodium.sh[Rhodium Standard]
-* Inspired by https://github.com/leedrake5/unredact[unredact]

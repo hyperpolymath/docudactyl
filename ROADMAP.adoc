@@ -1,22 +1,79 @@
 // SPDX-License-Identifier: PMPL-1.0-or-later
 = Docudactyl Roadmap
 
-== Current Status
+== Current Status: v0.4.0 (97% complete)
 
-Initial development phase.
+The Chapel HPC engine, Zig FFI layer, Idris2 ABI proofs, and all subsystems are implemented.
+The only remaining blocker is multi-locale testing on an HPC cluster.
 
-== Milestones
+== Completed Milestones
 
-=== v0.1.0 - Foundation
-* [ ] Core functionality
-* [ ] Basic documentation
-* [ ] CI/CD pipeline
+=== v0.1.0 -- Foundation
+* [x] Julia extraction engine (now legacy)
+* [x] OCaml Scheme transformer
+* [x] Ada terminal UI
+* [x] RSR-compliant repository structure
 
-=== v1.0.0 - Stable Release
-* [ ] Full feature set
-* [ ] Comprehensive tests
-* [ ] Production ready
+=== v0.2.0 -- Chapel HPC Engine
+* [x] Chapel distributed processing (Config, ManifestLoader, FaultHandler, ProgressReporter, ShardedOutput, ResultAggregator, Checkpoint)
+* [x] Zig FFI layer with multi-format parser dispatch (PDF, Image, Audio, Video, EPUB, GeoSpatial)
+* [x] Idris2 ABI proofs (Types, Layout, Foreign)
+* [x] Generated C header (51 functions)
+* [x] Integration tests
 
-== Future Directions
+=== v0.3.0 -- Performance Subsystems
+* [x] 20 processing stages with Cap'n Proto binary output
+* [x] NDJSON enriched manifests (eliminates 170M stat() calls)
+* [x] Two-level caching: L1 LMDB per-locale + L2 Dragonfly cross-locale
+* [x] Conduit preprocessing pipeline (magic-byte detection, SHA-256, validation)
+* [x] I/O prefetcher (io_uring + posix_fadvise fallback)
+* [x] Hardware crypto acceleration (SHA-NI, AVX2, AVX-512, AES-NI, ARM SHA2)
+* [x] Checkpoint and resume
 
-_To be determined based on community feedback._
+=== v0.4.0 -- ML & GPU Integration (current)
+* [x] GPU OCR coprocessor (PaddleOCR/Tesseract CUDA/CPU via dlopen)
+* [x] ML inference engine (ONNX Runtime: NER, Whisper, ImageClassify, Layout, Handwriting)
+* [x] Handle attachment pattern (ML + GPU OCR wired into parse path)
+* [x] 40+ Zig integration tests covering all subsystem APIs
+* [x] Containerfile (Wolfi runtime) and Slurm job script
+* [x] Full Idris2 ABI coverage (14 types, 5 struct proofs, 51 FFI declarations)
+* [x] Checkpoint protocol compliance (all 6 SCM files populated)
+* [x] Author/copyright/license cleanup across all files
+
+== Remaining: v0.4.1
+
+* [ ] Multi-locale testing on HPC cluster (GASNet/IBV, 4+ nodes)
+* [ ] End-to-end benchmark with British Library sample dataset
+
+== Future: v1.0.0 -- Production Release
+
+* [ ] Multi-locale validation at scale (64-512 nodes)
+* [ ] British Library pilot (170M items)
+* [ ] Performance tuning (target: 100 docs/s/node)
+* [ ] Production monitoring and alerting
+* [ ] Formal security audit of Zig FFI layer
+
+== Scale Estimates (British Library)
+
+[cols="1,2"]
+|===
+|Metric |Estimate
+
+|Items
+|170,000,000
+
+|Locales
+|64-512 nodes
+
+|Cold run (256 nodes + GPU)
+|~3.7 hours
+
+|Warm run (L1+L2 cache)
+|~4.4 minutes
+
+|Incremental (5% new)
+|~8 minutes
+
+|Output
+|~1.7 TB total
+|===
