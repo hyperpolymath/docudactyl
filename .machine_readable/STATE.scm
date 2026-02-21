@@ -2,12 +2,12 @@
 (state
   (metadata
     (version "0.4.0")
-    (last-updated "2026-02-20")
+    (last-updated "2026-02-21")
     (status active))
   (project-context
     (name "docudactyl")
     (purpose "Multi-format HPC document extraction engine — British Library scale")
-    (completion-percentage 95))
+    (completion-percentage 97))
   (components
     (component "chapel-hpc"
       (status "complete")
@@ -53,10 +53,13 @@
       (description "Containerfile (Wolfi runtime), Slurm job script, GASNet/IBV config"))
     (component "testing"
       (status "complete")
-      (description "Integration tests, error path tests, scale test (2105 files, 19.35 docs/s, 0 failures)"))
+      (description "40+ Zig integration tests (all subsystem APIs, struct sizes, null safety), error path tests, scale test (2105 files, 19.35 docs/s, 0 failures)"))
     (component "build-system"
       (status "complete")
-      (description "Justfile: build-hpc, deps-check, test-ffi, test-error-paths, test-scale, .tool-versions"))
+      (description "Justfile: build-hpc, build-idris, build-ada, deps-check, test-ffi, test-hpc, test-idris, test-ada, test-ocaml, test-scale, .tool-versions"))
+    (component "checkpoint-protocol"
+      (status "complete")
+      (description "All 6 SCM files populated: STATE, META (5 ADRs), ECOSYSTEM (deps + consumers), AGENTIC (constraints + bots), NEUROSYM (4 verification layers), PLAYBOOK (8 ops + 3 runbooks). AI.a2ml updated with canonical locations"))
     (component "ocaml-scm"
       (status "stable")
       (description "Offline Scheme transformer: PDF/JSON to S-expressions (not in HPC hot path)"))

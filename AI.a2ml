@@ -1,15 +1,61 @@
 
-# AI Assistant Instructions
+# AI Assistant Instructions — Docudactyl
 
 ## Repository Focus
-- `rsr-template-repo` is treated as a Rhodium Standard Repository; obey the Rhodium policies, maintain `.bot_directives`, and keep `.machines_readable/6scm/` authoritative.
-- Prefer to keep generated files out of source control, and regenerate them with the documented commands before committing.
+
+Docudactyl is a multi-format HPC document extraction engine targeting
+British Library scale (~170M items). The hot path is Chapel → Zig FFI → C
+libraries (Poppler, Tesseract, FFmpeg, libxml2, GDAL, libvips). OCaml is
+an offline Scheme transformer, Ada provides a TUI, and Julia is legacy.
+
+## Canonical Locations
+
+- Machine-readable state: `.machine_readable/` (NEVER `.machines_readable/`)
+- Idris2 ABI proofs: `src/Docudactyl/ABI/`
+- Zig FFI: `ffi/zig/src/`
+- Chapel HPC: `src/chapel/`
+- Generated C header: `generated/abi/docudactyl_ffi.h`
+- OCaml offline tool: `src/ocaml/`
+- Ada TUI: `src/ada/`
+- Julia legacy: `src/julia/`
+- Deploy: `deploy/` (Containerfile, Slurm script)
+- K9 contractiles: `contractiles/k9/`
+
+## Critical Invariants
+
+1. **No `.git` directories inside subdirectories** — this is a monorepo child
+2. **PMPL-1.0-or-later license** on all original code
+3. **Author**: Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>
+4. **Copyright**: Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
+5. **Version**: 0.4.0 across all components
+6. **Containerfile** never Dockerfile; **Podman** never Docker
+7. **Idris2 ABI**: No `believe_me`, `assert_total`, `Admitted` — all proofs genuine
+8. **Zig FFI**: No `@panic` in release builds; all errors returned via C ABI
+9. **Chapel**: All forall loops use `DynamicIters` for load balancing
+10. **SCM files ONLY in `.machine_readable/`** — never repository root
 
 ## Workflow
-1. Inspect `.machines_readable/6scm/STATE.scm` for blockers and next actions.
-2. Respect any constraints listed inside `.machines_readable/6scm/AGENTIC.scm` when tooling changes are requested.
-3. After finishing edits, update STATE with your outcomes and commit with a concise, imperative message.
+
+1. Read `.machine_readable/STATE.scm` for current status and blockers
+2. Respect constraints in `.machine_readable/AGENTIC.scm`
+3. Build with `just build-hpc` (Zig FFI + Chapel binary)
+4. Test with `just test-hpc` (FFI tests + error path tests)
+5. After edits, update STATE.scm and commit with concise imperative message
+
+## Build Commands
+
+```bash
+just build-ffi          # Zig FFI library
+just build-chapel       # Chapel HPC binary (requires FFI)
+just build-hpc          # Both
+just test-ffi           # Zig integration tests
+just test-error-paths   # Error handling tests
+just test-scale         # Scale test (2105+ files)
+just test-hpc           # All tests
+just deps-check         # Verify dependencies
+```
 
 ## Delivery Promises
-- Mention in summaries whether STATE, `contractiles/`, or `.bot_directives/` changed.
-- Keep this file in sync with the repository’s status; update it if the governance changes.
+
+- Mention in summaries whether STATE.scm, TOPOLOGY.md, or contractiles/ changed
+- Keep this file in sync with the repository status

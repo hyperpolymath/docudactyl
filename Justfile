@@ -76,6 +76,11 @@ build-ada:
     @echo "Building Ada TUI..."
     cd {{ada_src}} && mkdir -p obj bin && gprbuild -P docudactyl.gpr
 
+# Check Idris2 ABI proofs compile
+build-idris:
+    @echo "Building Idris2 ABI proofs..."
+    idris2 --build docudactyl.ipkg
+
 # Build in release mode with optimizations
 build-release: build-julia
     @echo "Building {{project}} (release)..."
@@ -87,6 +92,9 @@ clean:
     @echo "Cleaning..."
     rm -rf {{ocaml_src}}/_build
     rm -rf {{ada_src}}/obj {{ada_src}}/bin
+    rm -rf {{zig_ffi}}/zig-out {{zig_ffi}}/.zig-cache
+    rm -rf bin/docudactyl-hpc
+    rm -rf build/
     rm -rf target _build dist
 
 # Deep clean including caches [reversible: rebuild]
@@ -111,6 +119,14 @@ test-julia:
 test-ocaml:
     @echo "Running OCaml tests..."
     cd {{ocaml_src}} && dune runtest
+
+# Run Ada build check (Ada uses gprbuild — no separate test runner)
+test-ada: build-ada
+    @echo "Ada TUI build verified!"
+
+# Verify Idris2 ABI proofs compile cleanly
+test-idris: build-idris
+    @echo "Idris2 ABI proofs verified!"
 
 # Run tests with verbose output
 test-verbose:
