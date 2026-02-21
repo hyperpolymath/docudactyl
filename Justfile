@@ -704,7 +704,7 @@ test-scale: build-hpc
     fi
     echo "Scale test PASSED"
 
-# Run all HPC tests
+# Run all HPC tests (FFI unit + integration + error paths)
 test-hpc: test-ffi test-error-paths
     @echo "All HPC tests passed!"
 

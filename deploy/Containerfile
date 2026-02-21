@@ -20,6 +20,7 @@ RUN dnf install -y \
     poppler-devel glib2-devel \
     tesseract-devel leptonica-devel \
     libxml2-devel gdal-devel vips-devel \
+    lmdb-devel \
     && dnf clean all
 
 # Install FFmpeg from RPM Fusion
@@ -43,6 +44,7 @@ RUN mkdir -p bin && \
          src/chapel/ContentType.chpl \
          src/chapel/FFIBridge.chpl \
          src/chapel/ManifestLoader.chpl \
+         src/chapel/NdjsonManifest.chpl \
          src/chapel/FaultHandler.chpl \
          src/chapel/ProgressReporter.chpl \
          src/chapel/ShardedOutput.chpl \
@@ -62,6 +64,7 @@ RUN apk add --no-cache \
     tesseract-ocr leptonica \
     ffmpeg-libs \
     libxml2 gdal vips \
+    lmdb \
     tesseract-ocr-eng
 
 # Copy built artifacts

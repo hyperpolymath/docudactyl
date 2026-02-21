@@ -60,7 +60,7 @@ const c = @cImport({
 // Version & Compile-Time Dependency Checks
 // ============================================================================
 
-const VERSION = "0.1.0";
+const VERSION = "0.4.0";
 const BUILD_INFO = "docudactyl-ffi built with Zig " ++ @import("builtin").zig_version_string;
 
 // Zig minimum version: 0.15.0 (Module-based build API)

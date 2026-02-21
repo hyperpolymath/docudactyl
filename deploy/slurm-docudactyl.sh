@@ -25,6 +25,14 @@ OUTPUT_DIR="${OUTPUT_DIR:-/data/output/run-$(date +%Y%m%d-%H%M%S)}"
 NUM_LOCALES="${SLURM_NNODES:-64}"
 CHUNK_SIZE="${CHUNK_SIZE:-256}"
 MANIFEST_MODE="${MANIFEST_MODE:-shared}"  # or "broadcast" if no shared filesystem
+CACHE_DIR="${CACHE_DIR:-/scratch/$USER/ddac-cache}"
+CACHE_SIZE_MB="${CACHE_SIZE_MB:-10240}"       # 10GB per locale
+DRAGONFLY_ADDR="${DRAGONFLY_ADDR:-}"          # e.g. "dragonfly:6379"
+STAGES="${STAGES:-analysis}"                  # none|fast|analysis|all
+MODEL_DIR="${MODEL_DIR:-/opt/docudactyl/models}"
+CONDUIT="${CONDUIT:-true}"
+GPU_OCR="${GPU_OCR:-true}"
+ML="${ML:-true}"
 
 # ── Environment ──────────────────────────────────────────────────────
 # Chapel GASNet configuration for multi-locale
@@ -46,6 +54,12 @@ echo "Output:       $OUTPUT_DIR"
 echo "Locales:      $NUM_LOCALES"
 echo "Chunk size:   $CHUNK_SIZE"
 echo "Manifest mode: $MANIFEST_MODE"
+echo "Stages:       $STAGES"
+echo "Cache L1:     $CACHE_DIR (${CACHE_SIZE_MB}MB/locale)"
+[ -n "$DRAGONFLY_ADDR" ] && echo "Cache L2:     Dragonfly @ $DRAGONFLY_ADDR"
+echo "Conduit:      $CONDUIT"
+echo "GPU OCR:      $GPU_OCR"
+echo "ML:           $ML (models: $MODEL_DIR)"
 echo ""
 
 # Verify manifest exists
@@ -66,14 +80,29 @@ mkdir -p logs
 echo "Starting Docudactyl HPC at $(date -Iseconds)"
 echo ""
 
+# Build CLI arguments
+ARGS=(
+    --manifestPath="$MANIFEST"
+    --outputDir="$OUTPUT_DIR"
+    --manifestMode="$MANIFEST_MODE"
+    --chunkSize="$CHUNK_SIZE"
+    --stagesConfig="$STAGES"
+    --resume=true
+    --checkpointIntervalDocs=10000
+    --progressIntervalSec=60
+    --conduitEnabled="$CONDUIT"
+    --gpuOcrEnabled="$GPU_OCR"
+    --mlEnabled="$ML"
+    --modelDir="$MODEL_DIR"
+    --cacheDir="$CACHE_DIR"
+    --cacheSizeMB="$CACHE_SIZE_MB"
+)
+
+# Add Dragonfly L2 cache if configured
+[ -n "$DRAGONFLY_ADDR" ] && ARGS+=(--dragonflyAddr="$DRAGONFLY_ADDR")
+
 srun --mpi=none /opt/docudactyl/bin/docudactyl-hpc \
-    --manifestPath="$MANIFEST" \
-    --outputDir="$OUTPUT_DIR" \
-    --manifestMode="$MANIFEST_MODE" \
-    --chunkSize="$CHUNK_SIZE" \
-    --resume=true \
-    --checkpointIntervalDocs=10000 \
-    --progressIntervalSec=60 \
+    "${ARGS[@]}" \
     -nl "$NUM_LOCALES"
 
 EXIT_CODE=$?

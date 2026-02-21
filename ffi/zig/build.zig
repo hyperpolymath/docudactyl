@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
         .name = "docudactyl_ffi",
         .root_module = root_module,
         .linkage = .dynamic,
-        .version = .{ .major = 0, .minor = 1, .patch = 0 },
+        .version = .{ .major = 0, .minor = 4, .patch = 0 },
     });
     b.installArtifact(lib);
 
