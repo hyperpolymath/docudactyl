@@ -125,10 +125,12 @@ fn linkCLibrariesOnModule(module: *std.Build.Module) void {
     module.linkSystemLibrary("tesseract", .{});
     module.linkSystemLibrary("lept", .{});
 
-    // FFmpeg (audio/video)
-    module.linkSystemLibrary("libavformat", .{});
-    module.linkSystemLibrary("libavcodec", .{});
-    module.linkSystemLibrary("libavutil", .{});
+    // FFmpeg (audio/video) — use names without "lib" prefix;
+    // Zig prepends "lib" for path search (libavformat.so) and
+    // these are also valid pkg-config names.
+    module.linkSystemLibrary("avformat", .{});
+    module.linkSystemLibrary("avcodec", .{});
+    module.linkSystemLibrary("avutil", .{});
 
     // libxml2 (EPUB/XHTML)
     module.linkSystemLibrary("libxml-2.0", .{});
