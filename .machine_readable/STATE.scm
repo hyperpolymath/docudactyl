@@ -7,7 +7,7 @@
   (project-context
     (name "docudactyl")
     (purpose "Multi-format HPC document extraction engine — British Library scale")
-    (completion-percentage 97))
+    (completion-percentage 99))
   (components
     (component "chapel-hpc"
       (status "complete")
