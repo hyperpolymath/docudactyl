@@ -1,4 +1,4 @@
-# RSR-template-repo - RSR Standard Justfile Template
+# Docudactyl - RSR Standard Justfile
 # https://just.systems/man/en/
 #
 # This is the CANONICAL template for all RSR projects.
