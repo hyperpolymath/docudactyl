@@ -97,9 +97,10 @@ struct StageResults {
   coordRasterX @45 :Float64; # Raster X dimension
   coordRasterY @46 :Float64; # Raster Y dimension
 
-  # ── ML Stubs (bits 14-19) ──────────────────────────────────────────
-  # These stages require external ML runtimes not yet integrated.
-  # status = "not_available", reason = human-readable explanation.
+  # ── ML Stages (bits 14-19) ──────────────────────────────────────────
+  # These stages dispatch to ONNX Runtime when an ML handle is attached.
+  # status = "ok" / "not_available" / "model_not_found" / "inference_error"
+  # reason = human-readable explanation or inference summary.
   nerStatus              @47 :Text;
   nerReason              @48 :Text;
   whisperStatus          @49 :Text;

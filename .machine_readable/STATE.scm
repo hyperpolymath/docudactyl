@@ -44,7 +44,7 @@
       (description "Cap'n Proto binary serialisation for stage results. Minimal single-segment builder, no external deps"))
     (component "idris2-abi"
       (status "complete")
-      (description "Formal ABI types with genuine proofs: ContentKind, ParseStatus, ParseResult (952B), OcrResult (48B), ConduitResult (88B), OcrStatus, GpuBackend, ConduitValidation"))
+      (description "Formal ABI types with genuine proofs: ContentKind, ParseStatus, ParseResult (952B), OcrResult (48B), ConduitResult (88B), MlResult (48B), CryptoCaps (16B), OcrStatus, GpuBackend, ConduitValidation, MlStatus, MlStage, ExecProvider, Sha256Tier. Full FFI declarations for all 51 ddac_* functions"))
     (component "checkpoint-resume"
       (status "complete")
       (description "Per-locale checkpoint files, resume from previous run, configurable flush interval"))

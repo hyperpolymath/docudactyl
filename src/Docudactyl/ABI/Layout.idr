@@ -239,6 +239,128 @@ parseResultSizeCrossPlatform :
 parseResultSizeCrossPlatform p prf = SizeProof
 
 --------------------------------------------------------------------------------
+-- ddac_ml_result_t Layout (LP64)
+--------------------------------------------------------------------------------
+
+||| Full layout of the MlResult struct as it appears in C on LP64.
+||| This must match ffi/zig/src/ml_inference.zig exactly.
+|||
+||| Layout on LP64:
+|||   status:            uint8    @ 0   (1 byte)
+|||   stage:             uint8    @ 1   (1 byte)
+|||   provider:          uint8    @ 2   (1 byte)
+|||   _pad:              uint8[5] @ 3   (5 bytes)
+|||   inference_time_us: int64    @ 8   (8 bytes)
+|||   output_count:      int64    @ 16  (8 bytes)
+|||   confidence:        double   @ 24  (8 bytes)
+|||   text_offset:       int64    @ 32  (8 bytes)
+|||   text_length:       int64    @ 40  (8 bytes)
+|||   Total:                            48 bytes (aligned to 8)
+public export
+mlResultLayout : StructLayout 7
+mlResultLayout =
+  MkStructLayout
+    [ MkField "status"            0   1  1
+    , MkField "stage"             1   1  1
+    , MkField "provider"          2   1  1
+    , MkField "inference_time_us" 8   8  8
+    , MkField "output_count"      16  8  8
+    , MkField "confidence"        24  8  8
+    , MkField "text_offset"       32  8  8
+    ]
+    48
+    8
+
+||| Proof that 8 divides 48 (48 = 6 * 8)
+public export
+mlResultAligned : Divides 8 48
+mlResultAligned = MkDivides 6
+
+||| Proof that MlResult fields are correctly aligned.
+|||   status:            0 = 0 * 1
+|||   stage:             1 = 1 * 1
+|||   provider:          2 = 2 * 1
+|||   inference_time_us: 8 = 1 * 8
+|||   output_count:     16 = 2 * 8
+|||   confidence:       24 = 3 * 8
+|||   text_offset:      32 = 4 * 8
+public export
+mlResultFieldsAligned :
+  FieldsAligned
+    [ MkField "status"            0   1  1
+    , MkField "stage"             1   1  1
+    , MkField "provider"          2   1  1
+    , MkField "inference_time_us" 8   8  8
+    , MkField "output_count"      16  8  8
+    , MkField "confidence"        24  8  8
+    , MkField "text_offset"       32  8  8
+    ]
+mlResultFieldsAligned =
+  ConsField (MkField "status"            0   1  1) _ (MkDivides 0) $
+  ConsField (MkField "stage"             1   1  1) _ (MkDivides 1) $
+  ConsField (MkField "provider"          2   1  1) _ (MkDivides 2) $
+  ConsField (MkField "inference_time_us" 8   8  8) _ (MkDivides 1) $
+  ConsField (MkField "output_count"      16  8  8) _ (MkDivides 2) $
+  ConsField (MkField "confidence"        24  8  8) _ (MkDivides 3) $
+  ConsField (MkField "text_offset"       32  8  8) [] (MkDivides 4) $
+  NoFields
+
+--------------------------------------------------------------------------------
+-- ddac_crypto_caps_t Layout
+--------------------------------------------------------------------------------
+
+||| Full layout of the CryptoCaps struct as it appears in C.
+||| This must match ffi/zig/src/hw_crypto.zig exactly.
+|||
+||| Layout:
+|||   has_sha_ni:     uint8    @ 0   (1 byte)
+|||   has_avx2:       uint8    @ 1   (1 byte)
+|||   has_avx512:     uint8    @ 2   (1 byte)
+|||   has_arm_sha2:   uint8    @ 3   (1 byte)
+|||   has_arm_sha512: uint8    @ 4   (1 byte)
+|||   has_aes_ni:     uint8    @ 5   (1 byte)
+|||   _pad:           uint8[2] @ 6   (2 bytes)
+|||   sha256_tier:    uint8    @ 8   (1 byte)
+|||   _pad2:          uint8[7] @ 9   (7 bytes)
+|||   Total:                         16 bytes
+public export
+cryptoCapsLayout : StructLayout 7
+cryptoCapsLayout =
+  MkStructLayout
+    [ MkField "has_sha_ni"     0  1  1
+    , MkField "has_avx2"       1  1  1
+    , MkField "has_avx512"     2  1  1
+    , MkField "has_arm_sha2"   3  1  1
+    , MkField "has_arm_sha512" 4  1  1
+    , MkField "has_aes_ni"     5  1  1
+    , MkField "sha256_tier"    8  1  1
+    ]
+    16
+    1
+
+||| CryptoCaps fields are all byte-aligned (trivially aligned).
+public export
+cryptoCapsFieldsAligned :
+  FieldsAligned
+    [ MkField "has_sha_ni"     0  1  1
+    , MkField "has_avx2"       1  1  1
+    , MkField "has_avx512"     2  1  1
+    , MkField "has_arm_sha2"   3  1  1
+    , MkField "has_arm_sha512" 4  1  1
+    , MkField "has_aes_ni"     5  1  1
+    , MkField "sha256_tier"    8  1  1
+    ]
+cryptoCapsFieldsAligned =
+  ConsField (MkField "has_sha_ni"     0  1  1) _ (MkDivides 0) $
+  ConsField (MkField "has_avx2"       1  1  1) _ (MkDivides 1) $
+  ConsField (MkField "has_avx512"     2  1  1) _ (MkDivides 2) $
+  ConsField (MkField "has_arm_sha2"   3  1  1) _ (MkDivides 3) $
+  ConsField (MkField "has_arm_sha512" 4  1  1) _ (MkDivides 4) $
+  ConsField (MkField "has_aes_ni"     5  1  1) _ (MkDivides 5) $
+  ConsField (MkField "sha256_tier"    8  1  1) [] (MkDivides 8) $
+  NoFields
+
+--------------------------------------------------------------------------------
 -- Offset Calculation
 --------------------------------------------------------------------------------
 

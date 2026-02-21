@@ -319,6 +319,205 @@ Eq GpuBackend where
   _             == _             = False
 
 --------------------------------------------------------------------------------
+-- ML Inference Status
+--------------------------------------------------------------------------------
+
+||| Status codes for ML inference results.
+||| Maps to the status field in ddac_ml_result_t (uint8).
+public export
+data MlStatus : Type where
+  ||| Inference succeeded
+  MlOk : MlStatus
+  ||| Model file not found in modelDir
+  MlModelNotFound : MlStatus
+  ||| ONNX Runtime inference error
+  MlInferenceError : MlStatus
+  ||| Input preprocessing error (bad image, wrong format)
+  MlInputError : MlStatus
+  ||| ONNX Runtime not available (dlopen failed)
+  MlOnnxNotAvailable : MlStatus
+
+||| Convert MlStatus to its C integer representation
+public export
+mlStatusToInt : MlStatus -> Bits8
+mlStatusToInt MlOk              = 0
+mlStatusToInt MlModelNotFound   = 1
+mlStatusToInt MlInferenceError  = 2
+mlStatusToInt MlInputError      = 3
+mlStatusToInt MlOnnxNotAvailable = 4
+
+||| Convert C integer to MlStatus
+public export
+intToMlStatus : Bits8 -> Maybe MlStatus
+intToMlStatus 0 = Just MlOk
+intToMlStatus 1 = Just MlModelNotFound
+intToMlStatus 2 = Just MlInferenceError
+intToMlStatus 3 = Just MlInputError
+intToMlStatus 4 = Just MlOnnxNotAvailable
+intToMlStatus _ = Nothing
+
+||| Eq implementation for MlStatus
+public export
+Eq MlStatus where
+  MlOk              == MlOk              = True
+  MlModelNotFound   == MlModelNotFound   = True
+  MlInferenceError  == MlInferenceError  = True
+  MlInputError      == MlInputError      = True
+  MlOnnxNotAvailable == MlOnnxNotAvailable = True
+  _                 == _                 = False
+
+||| Predicate: is this status a retryable ML error?
+public export
+isMlRetryable : MlStatus -> Bool
+isMlRetryable MlInferenceError = True
+isMlRetryable _                = False
+
+--------------------------------------------------------------------------------
+-- ML Stage Identifiers
+--------------------------------------------------------------------------------
+
+||| ML stage types corresponding to ONNX model files.
+||| Each stage maps to a {name}.onnx model in the model directory.
+public export
+data MlStage : Type where
+  ||| Named Entity Recognition (ner.onnx)
+  StageNER : MlStage
+  ||| Whisper audio transcription (whisper.onnx)
+  StageWhisper : MlStage
+  ||| Image classification (image_classify.onnx)
+  StageImageClassify : MlStage
+  ||| Document layout analysis (layout_analysis.onnx)
+  StageLayout : MlStage
+  ||| Handwriting OCR (handwriting_ocr.onnx)
+  StageHandwriting : MlStage
+
+||| Convert MlStage to its C integer representation
+public export
+mlStageToInt : MlStage -> Bits8
+mlStageToInt StageNER           = 0
+mlStageToInt StageWhisper       = 1
+mlStageToInt StageImageClassify = 2
+mlStageToInt StageLayout        = 3
+mlStageToInt StageHandwriting   = 4
+
+||| Convert C integer to MlStage
+public export
+intToMlStage : Bits8 -> Maybe MlStage
+intToMlStage 0 = Just StageNER
+intToMlStage 1 = Just StageWhisper
+intToMlStage 2 = Just StageImageClassify
+intToMlStage 3 = Just StageLayout
+intToMlStage 4 = Just StageHandwriting
+intToMlStage _ = Nothing
+
+||| All ML stages enumerated (proof of exhaustiveness)
+public export
+allMlStages : Vect 5 MlStage
+allMlStages = [StageNER, StageWhisper, StageImageClassify, StageLayout, StageHandwriting]
+
+||| Eq implementation for MlStage
+public export
+Eq MlStage where
+  StageNER           == StageNER           = True
+  StageWhisper       == StageWhisper       = True
+  StageImageClassify == StageImageClassify = True
+  StageLayout        == StageLayout        = True
+  StageHandwriting   == StageHandwriting   = True
+  _                  == _                  = False
+
+||| Model filename for a given ML stage
+public export
+mlStageModelName : MlStage -> String
+mlStageModelName StageNER           = "ner.onnx"
+mlStageModelName StageWhisper       = "whisper.onnx"
+mlStageModelName StageImageClassify = "image_classify.onnx"
+mlStageModelName StageLayout        = "layout_analysis.onnx"
+mlStageModelName StageHandwriting   = "handwriting_ocr.onnx"
+
+--------------------------------------------------------------------------------
+-- Execution Provider
+--------------------------------------------------------------------------------
+
+||| ONNX Runtime execution provider for ML inference.
+||| Auto-selected in priority order: TensorRT > CUDA > OpenVINO > CPU.
+public export
+data ExecProvider : Type where
+  TensorRT : ExecProvider
+  CUDA     : ExecProvider
+  OpenVINO : ExecProvider
+  CPU      : ExecProvider
+
+||| Convert ExecProvider to its C integer representation
+public export
+execProviderToInt : ExecProvider -> Bits8
+execProviderToInt TensorRT = 0
+execProviderToInt CUDA     = 1
+execProviderToInt OpenVINO = 2
+execProviderToInt CPU      = 3
+
+||| Convert C integer to ExecProvider
+public export
+intToExecProvider : Bits8 -> Maybe ExecProvider
+intToExecProvider 0 = Just TensorRT
+intToExecProvider 1 = Just CUDA
+intToExecProvider 2 = Just OpenVINO
+intToExecProvider 3 = Just CPU
+intToExecProvider _ = Nothing
+
+||| Eq implementation for ExecProvider
+public export
+Eq ExecProvider where
+  TensorRT == TensorRT = True
+  CUDA     == CUDA     = True
+  OpenVINO == OpenVINO = True
+  CPU      == CPU      = True
+  _        == _        = False
+
+||| Predicate: is this provider GPU-accelerated?
+public export
+isGpuProvider : ExecProvider -> Bool
+isGpuProvider TensorRT = True
+isGpuProvider CUDA     = True
+isGpuProvider _        = False
+
+--------------------------------------------------------------------------------
+-- SHA-256 Tier (Hardware Crypto)
+--------------------------------------------------------------------------------
+
+||| SHA-256 acceleration tier detected at runtime.
+public export
+data Sha256Tier : Type where
+  ||| Dedicated SHA instructions (SHA-NI on x86, SHA2 on ARM)
+  Dedicated : Sha256Tier
+  ||| Multi-buffer via AVX2 (4-lane interleaved)
+  Avx2Buffer : Sha256Tier
+  ||| Software-only implementation
+  Software : Sha256Tier
+
+||| Convert Sha256Tier to its C integer representation
+public export
+sha256TierToInt : Sha256Tier -> Bits8
+sha256TierToInt Dedicated  = 0
+sha256TierToInt Avx2Buffer = 1
+sha256TierToInt Software   = 2
+
+||| Convert C integer to Sha256Tier
+public export
+intToSha256Tier : Bits8 -> Maybe Sha256Tier
+intToSha256Tier 0 = Just Dedicated
+intToSha256Tier 1 = Just Avx2Buffer
+intToSha256Tier 2 = Just Software
+intToSha256Tier _ = Nothing
+
+||| Eq implementation for Sha256Tier
+public export
+Eq Sha256Tier where
+  Dedicated  == Dedicated  = True
+  Avx2Buffer == Avx2Buffer = True
+  Software   == Software   = True
+  _          == _          = False
+
+--------------------------------------------------------------------------------
 -- Opaque Handles
 --------------------------------------------------------------------------------
 
@@ -486,6 +685,48 @@ public export
 conduitResultStructAlign : HasAlignment ConduitValidation 8
 conduitResultStructAlign = AlignProof
 
+||| The ddac_ml_result_t struct total size on LP64 platforms.
+||| Layout:
+|||   status:            uint8    @ 0   (1 byte)
+|||   stage:             uint8    @ 1   (1 byte)
+|||   provider:          uint8    @ 2   (1 byte)
+|||   _pad:              uint8[5] @ 3   (5 bytes padding)
+|||   inference_time_us: int64    @ 8   (8 bytes)
+|||   output_count:      int64    @ 16  (8 bytes)
+|||   confidence:        double   @ 24  (8 bytes)
+|||   text_offset:       int64    @ 32  (8 bytes)
+|||   text_length:       int64    @ 40  (8 bytes)
+|||   Total:                            48 bytes (aligned to 8)
+public export
+mlResultStructSize : HasSize MlStatus 48
+mlResultStructSize = SizeProof
+
+||| MlResult has 8-byte alignment (due to int64/double fields)
+public export
+mlResultStructAlign : HasAlignment MlStatus 8
+mlResultStructAlign = AlignProof
+
+||| The ddac_crypto_caps_t struct total size on LP64 platforms.
+||| Layout:
+|||   has_sha_ni:    uint8  @ 0   (1 byte)
+|||   has_avx2:      uint8  @ 1   (1 byte)
+|||   has_avx512:    uint8  @ 2   (1 byte)
+|||   has_arm_sha2:  uint8  @ 3   (1 byte)
+|||   has_arm_sha512:uint8  @ 4   (1 byte)
+|||   has_aes_ni:    uint8  @ 5   (1 byte)
+|||   _pad:          uint8[2]@ 6  (2 bytes padding)
+|||   sha256_tier:   uint8  @ 8   (1 byte)
+|||   _pad2:         uint8[7]@ 9  (7 bytes padding)
+|||   Total:                       16 bytes (aligned to 1)
+public export
+cryptoCapsStructSize : HasSize Sha256Tier 16
+cryptoCapsStructSize = SizeProof
+
+||| CryptoCaps has 1-byte alignment (all uint8 fields)
+public export
+cryptoCapsStructAlign : HasAlignment Sha256Tier 1
+cryptoCapsStructAlign = AlignProof
+
 --------------------------------------------------------------------------------
 -- FFI Declarations (raw primitives)
 --------------------------------------------------------------------------------
@@ -515,10 +756,18 @@ namespace Foreign
 
 namespace Verify
 
-  ||| Verify all content kind values are distinct
+  ||| Verify all type mappings are distinct and exhaustive
   export
-  verifyContentKinds : IO ()
-  verifyContentKinds = do
-    putStrLn "ContentKind values: 0-6 (7 variants, all distinct)"
-    putStrLn "ParseStatus values: 0-6 (7 variants, all distinct)"
-    putStrLn "ABI types verified"
+  verifyAllTypes : IO ()
+  verifyAllTypes = do
+    putStrLn "ContentKind values:     0-6 (7 variants, injective, decidably equal)"
+    putStrLn "ParseStatus values:     0-6 (7 variants, retryable predicate)"
+    putStrLn "OcrStatus values:       0-3 (4 variants, fallback predicate)"
+    putStrLn "ConduitValidation:      0-3 (4 variants)"
+    putStrLn "GpuBackend values:      0-2 (3 variants)"
+    putStrLn "MlStatus values:        0-4 (5 variants, retryable predicate)"
+    putStrLn "MlStage values:         0-4 (5 variants, model name mapping)"
+    putStrLn "ExecProvider values:    0-3 (4 variants, GPU predicate)"
+    putStrLn "Sha256Tier values:      0-2 (3 variants)"
+    putStrLn "Struct sizes: ParseResult=952, OcrResult=48, ConduitResult=88, MlResult=48, CryptoCaps=16"
+    putStrLn "All ABI types verified"

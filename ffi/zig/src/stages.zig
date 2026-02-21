@@ -59,7 +59,7 @@ pub const STAGE_EXACT_DEDUP: u64 = 1 << 11;
 pub const STAGE_NEAR_DEDUP: u64 = 1 << 12;
 pub const STAGE_COORD_NORMALIZE: u64 = 1 << 13;
 
-// ML-dependent stages (stub implementations)
+// ML-dependent stages (dispatch to ONNX Runtime when ML handle is attached)
 pub const STAGE_NER: u64 = 1 << 14;
 pub const STAGE_WHISPER_TRANSCRIBE: u64 = 1 << 15;
 pub const STAGE_IMAGE_CLASSIFY: u64 = 1 << 16;
@@ -851,7 +851,7 @@ fn stageCoordNormalize(b: *capnp.Builder, input_path: [*:0]const u8) void {
 }
 
 // ============================================================================
-// Stage Implementations — ML Stubs
+// Stage Implementations — ML Fallback Stubs
 // ============================================================================
 
 fn writeStub(b: *capnp.Builder, status_ptr: usize, reason_ptr: usize, reason: []const u8) void {

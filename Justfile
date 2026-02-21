@@ -14,7 +14,7 @@ set positional-arguments := true
 
 # Project metadata
 project := "docudactyl"
-version := "0.1.0"
+version := "0.4.0"
 tier := "1"  # Tier 1: Chapel + OCaml + Ada + Zig FFI
 
 # Component paths
@@ -57,8 +57,8 @@ info:
 # BUILD & COMPILE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Build all components
-build: build-julia build-ocaml build-ada
+# Build all components (HPC + legacy)
+build: build-hpc build-ocaml build-ada
     @echo "All components built!"
 
 # Build Julia package
@@ -98,8 +98,8 @@ clean-all: clean
 # TEST & QUALITY
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Run all tests
-test: test-julia test-ocaml
+# Run all tests (HPC + legacy)
+test: test-hpc test-ocaml
     @echo "All tests passed!"
 
 # Run Julia tests
@@ -855,12 +855,18 @@ log count="20":
 # Count lines of code
 loc:
     @echo "=== Lines of Code ==="
-    @echo "Julia:"
-    @find {{julia_src}} -name "*.jl" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 || echo "0"
+    @echo "Chapel (HPC):"
+    @find {{chapel_src}} -name "*.chpl" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 || echo "0"
+    @echo "Zig (FFI):"
+    @find {{zig_ffi}}/src -name "*.zig" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 || echo "0"
+    @echo "Idris2 (ABI):"
+    @find src/Docudactyl -name "*.idr" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 || echo "0"
     @echo "OCaml:"
     @find {{ocaml_src}} -name "*.ml" -o -name "*.mli" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 || echo "0"
     @echo "Ada:"
     @find {{ada_src}} -name "*.ads" -o -name "*.adb" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 || echo "0"
+    @echo "Julia (legacy):"
+    @find {{julia_src}} -name "*.jl" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 || echo "0"
 
 # Show TODO comments
 todos:
