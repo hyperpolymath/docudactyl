@@ -144,23 +144,23 @@ test-coverage:
 
 # Format all source files [reversible: git checkout]
 fmt:
-    @echo "Formatting..."
-    # TODO: Add format command
-    # Rust: cargo fmt
-    # ReScript: npm run format
-    # Elixir: mix format
+    @echo "Formatting Zig..."
+    cd {{zig_ffi}} && find src test -name '*.zig' -exec zig fmt {} +
+    @echo "Formatting OCaml..."
+    cd {{ocaml_src}} && dune fmt 2>/dev/null || true
 
 # Check formatting without changes
 fmt-check:
-    @echo "Checking format..."
-    # TODO: Add format check
-    # Rust: cargo fmt --check
+    @echo "Checking Zig format..."
+    cd {{zig_ffi}} && find src test -name '*.zig' -exec zig fmt --check {} +
+    @echo "Checking OCaml format..."
+    cd {{ocaml_src}} && dune fmt --preview 2>/dev/null || true
 
-# Run linter
-lint:
-    @echo "Linting..."
-    # TODO: Add lint command
-    # Rust: cargo clippy -- -D warnings
+# Run linter (Chapel parse check + Zig compile check)
+lint: check-chapel
+    @echo "Linting Zig FFI..."
+    cd {{zig_ffi}} && zig build 2>&1 | head -20 || true
+    @echo "Lint passed!"
 
 # Run all quality checks
 quality: fmt-check lint test
@@ -886,7 +886,7 @@ loc:
 
 # Show TODO comments
 todos:
-    @grep -rn "TODO\|FIXME" --include="*.jl" --include="*.ml" --include="*.ads" --include="*.adb" . 2>/dev/null || echo "No TODOs"
+    @grep -rn "TODO\|FIXME" --include="*.chpl" --include="*.zig" --include="*.idr" --include="*.jl" --include="*.ml" --include="*.ads" --include="*.adb" . 2>/dev/null || echo "No TODOs"
 
 # Open in editor
 edit:

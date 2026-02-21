@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: PMPL-1.0-or-later
-# RSR-compliant .gitignore
+# Docudactyl .gitignore
 
-# OS & Editor
+# ── OS & Editor ──────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 *.swp
@@ -10,81 +10,72 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Build
-/target/
-/_build/
+# ── Build Artifacts ──────────────────────────────────────────────
+/bin/
 /build/
 /dist/
+/obj/
 /out/
+/target/
+/_build/
 
-# Dependencies
+# ── Ada/SPARK ────────────────────────────────────────────────────
+*.ali
+src/ada/obj/
+src/ada/bin/
+
+# ── Chapel ───────────────────────────────────────────────────────
+*.chpl.tmp.*
+*.real
+
+# ── Idris2 ───────────────────────────────────────────────────────
+build/ttc/
+build/depends/
+
+# ── Julia ────────────────────────────────────────────────────────
+*.jl.cov
+*.jl.mem
+src/julia/Manifest.toml
+
+# ── OCaml ────────────────────────────────────────────────────────
+src/ocaml/_build/
+
+# ── Zig ──────────────────────────────────────────────────────────
+ffi/zig/.zig-cache/
+ffi/zig/zig-out/
+
+# ── HPC Output ───────────────────────────────────────────────────
+/output/
+/output-*/
+/logs/
+
+# ── Cache & Data ─────────────────────────────────────────────────
+*.lmdb
+*.mdb
+/scratch/
+
+# ── Dependencies ─────────────────────────────────────────────────
 /node_modules/
 /vendor/
 /deps/
 /.elixir_ls/
 
-# Rust
-# Cargo.lock  # Keep for binaries
-
-# Elixir
-/cover/
-/doc/
-*.ez
-erl_crash.dump
-
-# Julia
-*.jl.cov
-*.jl.mem
-/Manifest.toml
-
-# ReScript
-/lib/bs/
-/.bsb.lock
-
-# Python (SaltStack only)
-__pycache__/
-*.py[cod]
-.venv/
-
-# Ada/SPARK
-*.ali
-/obj/
-/bin/
-
-# Haskell
-/.stack-work/
-/dist-newstyle/
-
-# Chapel
-*.chpl.tmp.*
-
-# Zig
-ffi/zig/.zig-cache/
-ffi/zig/zig-out/
-
-# HPC output
-/output/
-/output-*/
-
-# Secrets
+# ── Secrets ──────────────────────────────────────────────────────
 .env
 .env.*
 *.pem
 *.key
 secrets/
 
-# Test/Coverage
+# ── Test & Coverage ──────────────────────────────────────────────
 /coverage/
 htmlcov/
 
-# Logs
+# ── Logs & Temp ──────────────────────────────────────────────────
 *.log
-/logs/
-
-# Temp
-/tmp/
 *.tmp
 *.bak
+/tmp/
 
-# Crash recovery artifacts
+# ── Crash Recovery ───────────────────────────────────────────────
 ai-cli-crash-capture/
