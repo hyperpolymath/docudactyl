@@ -54,7 +54,7 @@ export export_csv, export_json, export_scheme
 export run_cli
 
 # Version info
-const VERSION = v"0.1.0"
+const VERSION = v"0.4.0"
 const PROGRAM_NAME = "Docudactyl"
 
 """

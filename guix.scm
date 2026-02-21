@@ -28,7 +28,7 @@
 
 (package
   (name "docudactyl")
-  (version "0.3.0")
+  (version "0.4.0")
   (source #f)
   (build-system gnu-build-system)
   (synopsis "Multi-format HPC document extraction engine")
