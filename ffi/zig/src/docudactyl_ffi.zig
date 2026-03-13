@@ -299,8 +299,20 @@ fn parsePdf(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *Pars
 
         if (c.poppler_page_get_text(page)) |text_ptr| {
             const text = std.mem.span(text_ptr);
-            out_file.writeAll(text) catch {};
-            out_file.writeAll("\n") catch {};
+            out_file.writeAll(text) catch |err| {
+                std.log.err("PDF output write failed on page {d}: {s}", .{ i, @errorName(err) });
+                copyToFixed(256, &result.error_msg, "Failed writing extracted PDF text to output file");
+                result.status = 1;
+                c.g_free(text_ptr);
+                return;
+            };
+            out_file.writeAll("\n") catch |err| {
+                std.log.err("PDF output newline write failed on page {d}: {s}", .{ i, @errorName(err) });
+                copyToFixed(256, &result.error_msg, "Failed writing extracted PDF text to output file");
+                result.status = 1;
+                c.g_free(text_ptr);
+                return;
+            };
             total_chars += @intCast(text.len);
             total_words += countWords(text);
             c.g_free(text_ptr);
@@ -444,7 +456,12 @@ fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *Han
         return;
     };
     defer out_file.close();
-    out_file.writeAll(ocr_text) catch {};
+    out_file.writeAll(ocr_text) catch |err| {
+        std.log.err("Image OCR output write failed: {s}", .{@errorName(err)});
+        copyToFixed(256, &result.error_msg, "Failed writing OCR text to output file");
+        result.status = 1;
+        return;
+    };
 
     result.char_count = @intCast(ocr_text.len);
     result.word_count = countWords(ocr_text);
@@ -516,7 +533,12 @@ fn parseAudio(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *Pa
         std.mem.sliceTo(&result.title, 0),
         std.mem.sliceTo(&result.author, 0),
     }) catch &buf;
-    out_file.writeAll(written) catch {};
+    out_file.writeAll(written) catch |err| {
+        std.log.err("Audio metadata output write failed: {s}", .{@errorName(err)});
+        copyToFixed(256, &result.error_msg, "Failed writing audio metadata to output file");
+        result.status = 1;
+        return;
+    };
 
     // MIME detection
     const path_str = std.mem.span(input_path);
@@ -593,7 +615,12 @@ fn parseVideo(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *Pa
         sub_count,
         std.mem.sliceTo(&result.title, 0),
     }) catch &buf;
-    out_file.writeAll(written) catch {};
+    out_file.writeAll(written) catch |err| {
+        std.log.err("Video metadata output write failed: {s}", .{@errorName(err)});
+        copyToFixed(256, &result.error_msg, "Failed writing video metadata to output file");
+        result.status = 1;
+        return;
+    };
 
     // MIME
     const path_str = std.mem.span(input_path);
@@ -665,7 +692,10 @@ fn extractXmlText(node: *c.xmlNode, file: std.fs.File, chars: *i64, words: *i64)
         if (n.type == c.XML_TEXT_NODE or n.type == c.XML_CDATA_SECTION_NODE) {
             if (n.content) |content| {
                 const text = std.mem.span(content);
-                file.writeAll(text) catch {};
+                file.writeAll(text) catch |err| {
+                    std.log.err("EPUB XML text output write failed: {s}", .{@errorName(err)});
+                    return; // Stop traversal — output file is in an inconsistent state
+                };
                 chars.* += @intCast(text.len);
                 words.* += countWords(text);
             }
@@ -729,7 +759,12 @@ fn parseGeo(input_path: [*:0]const u8, output_path: [*:0]const u8, result: *Pars
         gt[5],
         proj_str,
     }) catch &buf;
-    out_file.writeAll(written) catch {};
+    out_file.writeAll(written) catch |err| {
+        std.log.err("Geospatial metadata output write failed: {s}", .{@errorName(err)});
+        copyToFixed(256, &result.error_msg, "Failed writing geospatial metadata to output file");
+        result.status = 1;
+        return;
+    };
 
     // MIME
     const path_str = std.mem.span(input_path);
