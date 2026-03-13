@@ -463,10 +463,12 @@ fn stageOcrConfidence(b: *capnp.Builder, confidence: i32) void {
 fn stagePerceptualHash(b: *capnp.Builder, input_path: [*:0]const u8) void {
     const pix = c.pixRead(input_path);
     if (pix == null) return;
+    // SAFETY: @constCast required because pixDestroy takes *?*PIX (mutable pointer) but only reads then nullifies; pix will not be used after this
     defer c.pixDestroy(@constCast(&pix));
 
     const gray = c.pixConvertTo8(pix, 0);
     if (gray == null) return;
+    // SAFETY: @constCast required because pixDestroy takes *?*PIX (mutable pointer) but only reads then nullifies; gray will not be used after this
     defer c.pixDestroy(@constCast(&gray));
 
     const pw: u32 = @intCast(c.pixGetWidth(gray));
@@ -793,10 +795,12 @@ fn stageNearDedup(b: *capnp.Builder, input_path: [*:0]const u8, content_kind: c_
 
     const pix = c.pixRead(input_path);
     if (pix == null) return;
+    // SAFETY: @constCast required because pixDestroy takes *?*PIX (mutable pointer) but only reads then nullifies; pix will not be used after this
     defer c.pixDestroy(@constCast(&pix));
 
     const gray = c.pixConvertTo8(pix, 0);
     if (gray == null) return;
+    // SAFETY: @constCast required because pixDestroy takes *?*PIX (mutable pointer) but only reads then nullifies; gray will not be used after this
     defer c.pixDestroy(@constCast(&gray));
 
     const pw: u32 = @intCast(c.pixGetWidth(gray));
@@ -886,6 +890,7 @@ fn stageMultiLangOcr(b: *capnp.Builder, input_path: [*:0]const u8) void {
 
     const pix = c.pixRead(input_path);
     if (pix == null) return;
+    // SAFETY: @constCast required because pixDestroy takes *?*PIX (mutable pointer) but only reads then nullifies; pix will not be used after this
     defer c.pixDestroy(@constCast(&pix));
 
     c.TessBaseAPISetImage2(tess, pix);
@@ -949,6 +954,7 @@ fn stageRedactionDetect(b: *capnp.Builder, input_path: [*:0]const u8) void {
         const annot_mapping = c.poppler_page_get_annot_mapping(page);
         var item = annot_mapping;
         while (item) |node| : (item = node.*.next) {
+            // SAFETY: node.*.data is a GList element from poppler_page_get_annot_mapping() which always stores PopplerAnnotMapping pointers; alignment is guaranteed by GLib allocation
             const mapping: *c.PopplerAnnotMapping = @ptrCast(@alignCast(node.*.data));
             const annot = mapping.*.annot;
             const annot_type = c.poppler_annot_get_annot_type(annot);
@@ -1134,6 +1140,7 @@ pub fn runStages(ctx: StageContext) void {
     @memcpy(path_buf[path_slice.len .. path_slice.len + suffix.len], suffix);
     path_buf[path_slice.len + suffix.len] = 0;
 
+    // SAFETY: path_buf was null-terminated on line 1135; the sentinel-terminated slice is valid; @ptrCast converts the slice pointer to [*:0]u8
     const stages_path: [*:0]u8 = @ptrCast(path_buf[0 .. path_slice.len + suffix.len :0]);
     const file = std.fs.createFileAbsoluteZ(stages_path, .{}) catch return;
     defer file.close();

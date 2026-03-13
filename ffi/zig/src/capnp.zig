@@ -312,11 +312,13 @@ pub const Builder = struct {
 
     fn wr64(self: *Builder, off: usize, val: u64) void {
         if (off + 8 > self.cap) return;
+        // SAFETY: bounds check on line above ensures off + 8 <= cap; buf is caller-provided aligned buffer; align(1) permits unaligned write
         @as(*align(1) u64, @ptrCast(self.buf + off)).* = std.mem.nativeToLittle(u64, val);
     }
 
     fn wr32(self: *Builder, off: usize, val: u32) void {
         if (off + 4 > self.cap) return;
+        // SAFETY: bounds check on line above ensures off + 4 <= cap; buf is caller-provided aligned buffer; align(1) permits unaligned write
         @as(*align(1) u32, @ptrCast(self.buf + off)).* = std.mem.nativeToLittle(u32, val);
     }
 

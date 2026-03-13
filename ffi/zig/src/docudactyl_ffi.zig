@@ -396,6 +396,7 @@ fn parseImage(input_path: [*:0]const u8, output_path: [*:0]const u8, state: *Han
         result.status = 2;
         return;
     }
+    // SAFETY: @constCast required because pixDestroy takes *?*PIX (mutable pointer) but only reads then nullifies; pix will not be used after this
     defer c.pixDestroy(@constCast(&pix));
 
     // Check minimum dimensions — tiny images (icons, spacers) produce
@@ -809,12 +810,14 @@ export fn ddac_init() ?*anyopaque {
         state.vips_initialised = true;
     }
 
+    // SAFETY: state was just allocated by c_allocator.create(HandleState), which returns a well-aligned *HandleState
     return @ptrCast(state);
 }
 
 /// Free all library contexts. Safe to call with null.
 export fn ddac_free(handle: ?*anyopaque) void {
     const ptr = handle orelse return;
+    // SAFETY: ptr originates from ddac_init() which stores a *HandleState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *HandleState = @ptrCast(@alignCast(ptr));
 
     if (state.tess_api) |tess| {
@@ -853,6 +856,7 @@ export fn ddac_parse(
         copyToFixed(256, &result.error_msg, "Null handle");
         return result;
     };
+    // SAFETY: ptr originates from ddac_init() which stores a *HandleState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *HandleState = @ptrCast(@alignCast(ptr));
 
     const in_path = input_path orelse {
@@ -874,6 +878,7 @@ export fn ddac_parse(
         result.status = 2; // FileNotFound
         copyToFixed(256, &result.error_msg, "File not found: ");
         // Append as much of the path as fits
+        // SAFETY: error_msg is a [256]u8 array that was null-terminated by copyToFixed; casting to [*:0]const u8 is valid for std.mem.len
         const prefix_len = std.mem.len(@as([*:0]const u8, @ptrCast(&result.error_msg)));
         const remaining = 255 - prefix_len;
         const path_len = @min(in_slice.len, remaining);
@@ -921,6 +926,7 @@ export fn ddac_parse(
             .char_count = result.char_count,
             .duration_sec = result.duration_sec,
             .ocr_confidence = captured.ocr_confidence,
+            // SAFETY: TessBaseAPI* from Tesseract C API is cast to *anyopaque for the generic StageContext; the stages module casts it back
             .tess_api = if (state.tess_api) |t| @ptrCast(t) else null,
             .ml_handle = state.ml_handle,
         };
@@ -935,6 +941,7 @@ export fn ddac_parse(
 /// (Chapel) — it will NOT be freed by ddac_free().
 export fn ddac_set_ml_handle(handle: ?*anyopaque, ml_handle: ?*anyopaque) void {
     const ptr = handle orelse return;
+    // SAFETY: ptr originates from ddac_init() which stores a *HandleState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *HandleState = @ptrCast(@alignCast(ptr));
     state.ml_handle = ml_handle;
 }
@@ -944,6 +951,7 @@ export fn ddac_set_ml_handle(handle: ?*anyopaque, ml_handle: ?*anyopaque) void {
 /// caller (Chapel) — it will NOT be freed by ddac_free().
 export fn ddac_set_gpu_ocr_handle(handle: ?*anyopaque, ocr_handle: ?*anyopaque) void {
     const ptr = handle orelse return;
+    // SAFETY: ptr originates from ddac_init() which stores a *HandleState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *HandleState = @ptrCast(@alignCast(ptr));
     state.gpu_ocr_handle = ocr_handle;
 }

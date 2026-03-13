@@ -68,12 +68,14 @@ pub const Reader = struct {
     pub fn readU64(self: Reader, off: usize) u64 {
         const abs = self.data_start + off;
         if (abs + 8 > self.seg_len) return 0;
+        // SAFETY: bounds check on line above ensures abs + 8 <= seg_len; seg is a valid segment pointer from Reader.init
         return std.mem.readInt(u64, @as(*const [8]u8, @ptrCast(self.seg + abs)), .little);
     }
 
     pub fn readU32(self: Reader, off: usize) u32 {
         const abs = self.data_start + off;
         if (abs + 4 > self.seg_len) return 0;
+        // SAFETY: bounds check on line above ensures abs + 4 <= seg_len; seg is a valid segment pointer from Reader.init
         return std.mem.readInt(u32, @as(*const [4]u8, @ptrCast(self.seg + abs)), .little);
     }
 
@@ -93,6 +95,7 @@ pub const Reader = struct {
         const ptr_off = self.ptr_start + ptr_idx * 8;
         if (ptr_off + 8 > self.seg_len) return &.{};
 
+        // SAFETY: bounds check on line 94 ensures ptr_off + 8 <= seg_len; seg is a valid Cap'n Proto segment pointer
         const raw = std.mem.readInt(u64, @as(*const [8]u8, @ptrCast(self.seg + ptr_off)), .little);
 
         // Null pointer check.
@@ -127,6 +130,7 @@ pub const Reader = struct {
         const ptr_off = self.ptr_start + ptr_idx * 8;
         if (ptr_off + 8 > self.seg_len) return .{ .base = 0, .count = 0 };
 
+        // SAFETY: bounds check on line 128 ensures ptr_off + 8 <= seg_len; seg is a valid Cap'n Proto segment pointer
         const raw = std.mem.readInt(u64, @as(*const [8]u8, @ptrCast(self.seg + ptr_off)), .little);
         if (raw == 0) return .{ .base = 0, .count = 0 };
         if (raw & 3 != 1) return .{ .base = 0, .count = 0 };
@@ -151,6 +155,7 @@ pub const Reader = struct {
         const elem_ptr_off = list_base + elem_idx * 8;
         if (elem_ptr_off + 8 > self.seg_len) return &.{};
 
+        // SAFETY: bounds check on line 152 ensures elem_ptr_off + 8 <= seg_len; seg is a valid Cap'n Proto segment pointer
         const raw = std.mem.readInt(u64, @as(*const [8]u8, @ptrCast(self.seg + elem_ptr_off)), .little);
         if (raw == 0) return &.{};
         if (raw & 3 != 1) return &.{};

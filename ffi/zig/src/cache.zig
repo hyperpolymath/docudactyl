@@ -111,12 +111,14 @@ export fn ddac_cache_init(
         .allocator = allocator,
     };
 
+    // SAFETY: state was just allocated by c_allocator.create(CacheState), which returns a well-aligned *CacheState
     return @ptrCast(state);
 }
 
 /// Free the LMDB cache. Safe to call with null.
 export fn ddac_cache_free(handle: ?*anyopaque) void {
     const ptr = handle orelse return;
+    // SAFETY: ptr originates from ddac_cache_init() which stores a *CacheState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *CacheState = @ptrCast(@alignCast(ptr));
 
     lmdb.mdb_env_close(state.env);
@@ -139,6 +141,7 @@ export fn ddac_cache_lookup(
     result_size: usize,
 ) c_int {
     const ptr = handle orelse return 0;
+    // SAFETY: ptr originates from ddac_cache_init() which stores a *CacheState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *CacheState = @ptrCast(@alignCast(ptr));
     const path = doc_path orelse return 0;
     const out = result_out orelse return 0;
@@ -150,6 +153,8 @@ export fn ddac_cache_lookup(
 
     // Look up by path
     const path_slice = std.mem.span(path);
+    // SAFETY: @constCast is required by LMDB's C API which takes void* for keys; the data is only read, never written by mdb_get
+    // SAFETY: @ptrCast converts [*]const u8 to *anyopaque as required by MDB_val.mv_data field
     var key = lmdb.MDB_val{ .mv_size = path_slice.len, .mv_data = @constCast(@ptrCast(path_slice.ptr)) };
     var data: lmdb.MDB_val = undefined;
 
@@ -160,6 +165,7 @@ export fn ddac_cache_lookup(
     if (data.mv_size < expected_size) return 0;
 
     // Check mtime and file_size
+    // SAFETY: LMDB mdb_get returns mv_data pointing into the memory-mapped database; valid for the transaction lifetime
     const value_bytes: [*]const u8 = @ptrCast(data.mv_data);
     const cached_mtime = std.mem.readInt(i64, value_bytes[0..8], .little);
     const cached_size = std.mem.readInt(i64, value_bytes[8..16], .little);
@@ -187,6 +193,7 @@ export fn ddac_cache_store(
     result_size: usize,
 ) void {
     const ptr = handle orelse return;
+    // SAFETY: ptr originates from ddac_cache_init() which stores a *CacheState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *CacheState = @ptrCast(@alignCast(ptr));
     const path = doc_path orelse return;
     const result_bytes = result orelse return;
@@ -205,7 +212,10 @@ export fn ddac_cache_store(
     if (lmdb.mdb_txn_begin(state.env, null, 0, &txn) != 0) return;
 
     const path_slice = std.mem.span(path);
+    // SAFETY: @constCast is required by LMDB's C API which takes void* for keys; the data is only read, never written by mdb_put for keys
+    // SAFETY: @ptrCast converts [*]const u8 to *anyopaque as required by MDB_val.mv_data field
     var key = lmdb.MDB_val{ .mv_size = path_slice.len, .mv_data = @constCast(@ptrCast(path_slice.ptr)) };
+    // SAFETY: value_buf is a stack-allocated array; @ptrCast converts *[N]u8 to *anyopaque for MDB_val.mv_data; valid for the transaction scope
     var data = lmdb.MDB_val{ .mv_size = value_size, .mv_data = @ptrCast(&value_buf) };
 
     if (lmdb.mdb_put(txn, state.dbi, &key, &data, 0) != 0) {
@@ -219,6 +229,7 @@ export fn ddac_cache_store(
 /// Return the number of entries in the cache.
 export fn ddac_cache_count(handle: ?*anyopaque) u64 {
     const ptr = handle orelse return 0;
+    // SAFETY: ptr originates from ddac_cache_init() which stores a *CacheState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *CacheState = @ptrCast(@alignCast(ptr));
 
     var txn: ?*lmdb.MDB_txn = null;
@@ -235,6 +246,7 @@ export fn ddac_cache_count(handle: ?*anyopaque) u64 {
 /// Call this periodically for durability or before graceful shutdown.
 export fn ddac_cache_sync(handle: ?*anyopaque) void {
     const ptr = handle orelse return;
+    // SAFETY: ptr originates from ddac_cache_init() which stores a *CacheState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *CacheState = @ptrCast(@alignCast(ptr));
     _ = lmdb.mdb_env_sync(state.env, 1);
 }

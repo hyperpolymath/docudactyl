@@ -335,6 +335,7 @@ pub fn reextractMerge(
 
     // Update the stages mask to be the union
     const merged_mask = exist_mask | new_mask;
+    // SAFETY: out_seg is a slice into out_buf; data_start + 8 is within bounds (checked by min_seg_size validation above); ptr arithmetic yields valid [8]u8 pointer
     std.mem.writeInt(u64, @as(*[8]u8, @ptrCast(out_seg.ptr + data_start)), merged_mask, .little);
 
     result.merged_mask = merged_mask;

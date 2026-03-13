@@ -329,12 +329,14 @@ fn processBatchGpu(state: *GpuOcrState) void {
 export fn ddac_gpu_ocr_init() ?*anyopaque {
     const allocator = std.heap.c_allocator;
     const state = GpuOcrState.init(allocator) catch return null;
+    // SAFETY: state was just allocated by c_allocator.create(GpuOcrState), which returns a well-aligned *GpuOcrState
     return @ptrCast(state);
 }
 
 /// Free the GPU OCR coprocessor.
 export fn ddac_gpu_ocr_free(handle: ?*anyopaque) void {
     const ptr = handle orelse return;
+    // SAFETY: ptr originates from ddac_gpu_ocr_init() which stores a *GpuOcrState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *GpuOcrState = @ptrCast(@alignCast(ptr));
     state.deinit();
 }
@@ -343,6 +345,7 @@ export fn ddac_gpu_ocr_free(handle: ?*anyopaque) void {
 /// Returns: 0=paddle_gpu, 1=tesseract_cuda, 2=cpu_only
 export fn ddac_gpu_ocr_backend(handle: ?*anyopaque) u8 {
     const ptr = handle orelse return 2;
+    // SAFETY: ptr originates from ddac_gpu_ocr_init() which stores a *GpuOcrState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *GpuOcrState = @ptrCast(@alignCast(ptr));
     return @intFromEnum(state.backend);
 }
@@ -356,6 +359,7 @@ export fn ddac_gpu_ocr_submit(
     output_path: [*:0]const u8,
 ) c_int {
     const ptr = handle orelse return -1;
+    // SAFETY: ptr originates from ddac_gpu_ocr_init() which stores a *GpuOcrState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *GpuOcrState = @ptrCast(@alignCast(ptr));
 
     if (state.queue_len >= MAX_BATCH_SIZE) return -1;
@@ -381,6 +385,7 @@ export fn ddac_gpu_ocr_submit(
 /// Call this before collecting results if the queue isn't full.
 export fn ddac_gpu_ocr_flush(handle: ?*anyopaque) void {
     const ptr = handle orelse return;
+    // SAFETY: ptr originates from ddac_gpu_ocr_init() which stores a *GpuOcrState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *GpuOcrState = @ptrCast(@alignCast(ptr));
 
     if (state.queue_len > 0) {
@@ -391,6 +396,7 @@ export fn ddac_gpu_ocr_flush(handle: ?*anyopaque) void {
 /// Get the number of results ready to collect after flush.
 export fn ddac_gpu_ocr_results_ready(handle: ?*anyopaque) u32 {
     const ptr = handle orelse return 0;
+    // SAFETY: ptr originates from ddac_gpu_ocr_init() which stores a *GpuOcrState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *GpuOcrState = @ptrCast(@alignCast(ptr));
     return state.results_ready;
 }
@@ -404,6 +410,7 @@ export fn ddac_gpu_ocr_collect(
     result_out: *OcrResult,
 ) c_int {
     const ptr = handle orelse return -1;
+    // SAFETY: ptr originates from ddac_gpu_ocr_init() which stores a *GpuOcrState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *GpuOcrState = @ptrCast(@alignCast(ptr));
 
     if (slot_id >= state.results_ready) return -1;
@@ -427,6 +434,7 @@ export fn ddac_gpu_ocr_stats(
         gpu_time_us.* = 0;
         return;
     };
+    // SAFETY: ptr originates from ddac_gpu_ocr_init() which stores a *GpuOcrState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *GpuOcrState = @ptrCast(@alignCast(ptr));
     submitted.* = state.total_submitted;
     completed.* = state.total_completed;

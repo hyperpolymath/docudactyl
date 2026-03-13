@@ -209,12 +209,14 @@ export fn ddac_dragonfly_connect(host_port: [*:0]const u8) ?*anyopaque {
         return null;
     }
 
+    // SAFETY: handle was just allocated by c_allocator.create(DfHandle), which returns a well-aligned *DfHandle
     return @ptrCast(handle);
 }
 
 /// Close and free the Dragonfly connection.
 export fn ddac_dragonfly_close(handle: ?*anyopaque) void {
     if (handle) |h| {
+        // SAFETY: h originates from ddac_dragonfly_connect() which stores a *DfHandle via @ptrCast; alignment is guaranteed by c_allocator
         const df: *DfHandle = @ptrCast(@alignCast(h));
         df.client.close();
         std.heap.c_allocator.destroy(df);
@@ -231,6 +233,7 @@ export fn ddac_dragonfly_lookup(
     result_out: [*]u8,
     result_size: usize,
 ) c_int {
+    // SAFETY: handle originates from ddac_dragonfly_connect() which stores a *DfHandle via @ptrCast; alignment is guaranteed by c_allocator
     const df: *DfHandle = @ptrCast(@alignCast(handle));
     const sha = std.mem.span(sha256);
 
@@ -260,6 +263,7 @@ export fn ddac_dragonfly_store(
     result_size: usize,
     ttl_secs: u32,
 ) void {
+    // SAFETY: handle originates from ddac_dragonfly_connect() which stores a *DfHandle via @ptrCast; alignment is guaranteed by c_allocator
     const df: *DfHandle = @ptrCast(@alignCast(handle));
     const sha = std.mem.span(sha256);
 
@@ -276,6 +280,7 @@ export fn ddac_dragonfly_store(
 /// Get the number of ddac keys in the cache (approximate).
 /// Uses DBSIZE command.
 export fn ddac_dragonfly_count(handle: *anyopaque) u64 {
+    // SAFETY: handle originates from ddac_dragonfly_connect() which stores a *DfHandle via @ptrCast; alignment is guaranteed by c_allocator
     const df: *DfHandle = @ptrCast(@alignCast(handle));
     df.client.sendCommand(&[_][]const u8{"DBSIZE"}) catch return 0;
     const n = df.client.readIntegerReply() catch return 0;

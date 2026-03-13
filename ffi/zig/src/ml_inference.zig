@@ -296,12 +296,14 @@ const MlEngine = struct {
 export fn ddac_ml_init() ?*anyopaque {
     const allocator = std.heap.c_allocator;
     const engine = MlEngine.init(allocator) catch return null;
+    // SAFETY: engine was just allocated by c_allocator.create(MlEngine), which returns a well-aligned *MlEngine
     return @ptrCast(engine);
 }
 
 /// Free the ML inference engine.
 export fn ddac_ml_free(handle: ?*anyopaque) void {
     const ptr = handle orelse return;
+    // SAFETY: ptr originates from ddac_ml_init() which stores a *MlEngine via @ptrCast; alignment is guaranteed by c_allocator
     const engine: *MlEngine = @ptrCast(@alignCast(ptr));
     engine.deinit();
 }
@@ -310,6 +312,7 @@ export fn ddac_ml_free(handle: ?*anyopaque) void {
 /// Returns 1 if available, 0 if not.
 export fn ddac_ml_available(handle: ?*anyopaque) u8 {
     const ptr = handle orelse return 0;
+    // SAFETY: ptr originates from ddac_ml_init() which stores a *MlEngine via @ptrCast; alignment is guaranteed by c_allocator
     const engine: *MlEngine = @ptrCast(@alignCast(ptr));
     return if (engine.ort.available) 1 else 0;
 }
@@ -318,6 +321,7 @@ export fn ddac_ml_available(handle: ?*anyopaque) u8 {
 /// Returns: 0=TensorRT, 1=CUDA, 2=OpenVINO, 3=CPU
 export fn ddac_ml_provider(handle: ?*anyopaque) u8 {
     const ptr = handle orelse return 3;
+    // SAFETY: ptr originates from ddac_ml_init() which stores a *MlEngine via @ptrCast; alignment is guaranteed by c_allocator
     const engine: *MlEngine = @ptrCast(@alignCast(ptr));
     return @intFromEnum(engine.ort.provider);
 }
@@ -325,6 +329,7 @@ export fn ddac_ml_provider(handle: ?*anyopaque) u8 {
 /// Get human-readable name for the execution provider.
 export fn ddac_ml_provider_name(handle: ?*anyopaque) [*:0]const u8 {
     const ptr = handle orelse return "unavailable";
+    // SAFETY: ptr originates from ddac_ml_init() which stores a *MlEngine via @ptrCast; alignment is guaranteed by c_allocator
     const engine: *MlEngine = @ptrCast(@alignCast(ptr));
     return switch (engine.ort.provider) {
         .tensorrt => "TensorRT (NVIDIA INT8/FP16)",
@@ -339,6 +344,7 @@ export fn ddac_ml_provider_name(handle: ?*anyopaque) [*:0]const u8 {
 ///                  layout_analysis.onnx, handwriting_ocr.onnx
 export fn ddac_ml_set_model_dir(handle: ?*anyopaque, dir: [*:0]const u8) void {
     const ptr = handle orelse return;
+    // SAFETY: ptr originates from ddac_ml_init() which stores a *MlEngine via @ptrCast; alignment is guaranteed by c_allocator
     const engine: *MlEngine = @ptrCast(@alignCast(ptr));
     engine.setModelDir(std.mem.span(dir));
 }
@@ -359,6 +365,7 @@ export fn ddac_ml_run_stage(
         result_out.status = 4; // onnx_not_available
         return -1;
     };
+    // SAFETY: ptr originates from ddac_ml_init() which stores a *MlEngine via @ptrCast; alignment is guaranteed by c_allocator
     const engine: *MlEngine = @ptrCast(@alignCast(ptr));
 
     if (stage >= ML_STAGE_COUNT) {
@@ -384,6 +391,7 @@ export fn ddac_ml_stats(
         total_inference_us.* = 0;
         return;
     };
+    // SAFETY: ptr originates from ddac_ml_init() which stores a *MlEngine via @ptrCast; alignment is guaranteed by c_allocator
     const engine: *MlEngine = @ptrCast(@alignCast(ptr));
     total_inferences.* = engine.total_inferences;
     total_inference_us.* = engine.total_inference_us;
@@ -402,5 +410,6 @@ export fn ddac_ml_stage_count() u8 {
 /// Get the model filename for a stage.
 export fn ddac_ml_model_name(stage: u8) [*:0]const u8 {
     if (stage >= ML_STAGE_COUNT) return "unknown";
+    // SAFETY: MODEL_NAMES[stage] is a comptime string literal; .ptr is a valid [*]const u8 that is null-terminated by Zig's string literal guarantee
     return @ptrCast(MlEngine.MODEL_NAMES[stage].ptr);
 }

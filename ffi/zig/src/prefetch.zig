@@ -71,12 +71,14 @@ export fn ddac_prefetch_init(window_size: u32) ?*anyopaque {
     }
 
     global_state = state;
+    // SAFETY: state was just allocated by c_allocator.create(PrefetchState), which returns a well-aligned *PrefetchState
     return @ptrCast(state);
 }
 
 /// Submit a prefetch hint for an upcoming file.
 /// The kernel will start loading the file into page cache asynchronously.
 export fn ddac_prefetch_hint(handle: *anyopaque, path: [*:0]const u8) void {
+    // SAFETY: handle originates from ddac_prefetch_init() which stores a *PrefetchState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *PrefetchState = @ptrCast(@alignCast(handle));
 
     // Close the file that was in this slot previously (if any)
@@ -106,6 +108,7 @@ export fn ddac_prefetch_hint(handle: *anyopaque, path: [*:0]const u8) void {
 
 /// Signal that a file has been processed. Releases page cache.
 export fn ddac_prefetch_done(handle: *anyopaque, path: [*:0]const u8) void {
+    // SAFETY: handle originates from ddac_prefetch_init() which stores a *PrefetchState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *PrefetchState = @ptrCast(@alignCast(handle));
     _ = path; // TODO: could match by path and close specific FD
 
@@ -120,6 +123,7 @@ export fn ddac_prefetch_done(handle: *anyopaque, path: [*:0]const u8) void {
 /// Free the prefetcher and close all open files.
 export fn ddac_prefetch_free(handle: ?*anyopaque) void {
     if (handle) |h| {
+        // SAFETY: h originates from ddac_prefetch_init() which stores a *PrefetchState via @ptrCast; alignment is guaranteed by c_allocator
         const state: *PrefetchState = @ptrCast(@alignCast(h));
 
         // Close all open file descriptors
@@ -145,6 +149,7 @@ export fn ddac_prefetch_free(handle: ?*anyopaque) void {
 /// Get prefetcher statistics.
 /// Returns the number of files currently being prefetched.
 export fn ddac_prefetch_inflight(handle: *anyopaque) u32 {
+    // SAFETY: handle originates from ddac_prefetch_init() which stores a *PrefetchState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *PrefetchState = @ptrCast(@alignCast(handle));
     var count: u32 = 0;
     for (state.fds[0..state.count]) |fd| {
