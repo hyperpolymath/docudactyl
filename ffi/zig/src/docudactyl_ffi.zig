@@ -24,6 +24,11 @@ const conduit = @import("conduit.zig");
 const gpu_ocr = @import("gpu_ocr.zig");
 const hw_crypto = @import("hw_crypto.zig");
 const ml_inference = @import("ml_inference.zig");
+const legal_ner = @import("legal_ner.zig");
+const financial_extract = @import("financial_extract.zig");
+const speaker_id = @import("speaker_id.zig");
+const reextract = @import("reextract.zig");
+const quality_stats = @import("quality_stats.zig");
 
 // Ensure submodule exports are included in the shared library
 comptime {
@@ -34,6 +39,11 @@ comptime {
     _ = gpu_ocr;
     _ = hw_crypto;
     _ = ml_inference;
+    _ = legal_ner;
+    _ = financial_extract;
+    _ = speaker_id;
+    _ = reextract;
+    _ = quality_stats;
 }
 
 const c = @cImport({
