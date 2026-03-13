@@ -13,8 +13,6 @@
 // Uses ONNX Runtime for ML-based NER when available, falls back to
 // regex pattern matching for common legal citation formats.
 //
-// SPDX-License-Identifier: PMPL-1.0-or-later
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 

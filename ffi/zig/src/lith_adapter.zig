@@ -222,10 +222,10 @@ fn detectEvidenceType(mime: []const u8) []const u8 {
 const PromptScores = struct {
     provenance: u8,
     replicability: u8,
-    objectivity: u8,
+    objective: u8,
     methodology: u8,
     publication: u8,
-    timeliness: u8,
+    transparency: u8,
 };
 
 /// Compute auto-PROMPT scores from extraction metadata.
@@ -244,10 +244,10 @@ fn computePromptScores(
     var scores: PromptScores = .{
         .provenance = 0,
         .replicability = 0,
-        .objectivity = 50, // Default: requires human assessment
+        .objective = 50, // Default: requires human assessment
         .methodology = 0,
         .publication = 0,
-        .timeliness = 50, // Default: requires document date analysis
+        .transparency = 50, // Default: requires human assessment of method openness
     };
 
     // ── Provenance ──────────────────────────────────────────────────────
@@ -279,10 +279,10 @@ fn computePromptScores(
     if (stages_mask & stages.STAGE_PERCEPTUAL_HASH != 0) repl += 10;
     scores.replicability = @intCast(@min(repl, 100));
 
-    // ── Objectivity ─────────────────────────────────────────────────────
+    // ── Objective ──────────────────────────────────────────────────────
     // Default 50. This dimension genuinely requires human assessment of
     // bias and conflicts of interest. We leave it at the midpoint.
-    scores.objectivity = 50;
+    scores.objective = 50;
 
     // ── Methodology ─────────────────────────────────────────────────────
     // Based on stage completeness. More stages run → better methodology
@@ -326,10 +326,10 @@ fn computePromptScores(
         scores.publication = 45;
     }
 
-    // ── Timeliness ──────────────────────────────────────────────────────
-    // Default 50. Requires document date analysis which is not available
-    // from the extraction metadata alone. Human override expected.
-    scores.timeliness = 50;
+    // ── Transparency ──────────────────────────────────────────────────────
+    // Default 50. Requires assessment of whether methods/data are openly
+    // available. Human override expected.
+    scores.transparency = 50;
 
     return scores;
 }
@@ -482,10 +482,10 @@ pub fn stageResultsToJson(
     // PROMPT scores
     w.print("\"prompt_provenance\":{d},", .{prompt.provenance}) catch return null;
     w.print("\"prompt_replicability\":{d},", .{prompt.replicability}) catch return null;
-    w.print("\"prompt_objectivity\":{d},", .{prompt.objectivity}) catch return null;
+    w.print("\"prompt_objective\":{d},", .{prompt.objective}) catch return null;
     w.print("\"prompt_methodology\":{d},", .{prompt.methodology}) catch return null;
     w.print("\"prompt_publication\":{d},", .{prompt.publication}) catch return null;
-    w.print("\"prompt_timeliness\":{d},", .{prompt.timeliness}) catch return null;
+    w.print("\"prompt_transparency\":{d},", .{prompt.transparency}) catch return null;
 
     // Sensitivity defaults to public for automated ingestion.
     writeJsonString(w, "sensitivity_level", "public") catch return null;
@@ -602,10 +602,10 @@ test "computePromptScores basic scoring" {
     try std.testing.expect(all_stages.provenance == 100);
     // Publication: court_filing → 95
     try std.testing.expect(all_stages.publication == 95);
-    // Objectivity always 50
-    try std.testing.expect(all_stages.objectivity == 50);
-    // Timeliness always 50
-    try std.testing.expect(all_stages.timeliness == 50);
+    // Objective always 50
+    try std.testing.expect(all_stages.objective == 50);
+    // Transparency always 50
+    try std.testing.expect(all_stages.transparency == 50);
     // Methodology: 20 + (24 * 80 / 24) = 20 + 80 = 100
     try std.testing.expect(all_stages.methodology == 100);
     // Replicability: 30 + 47 + 10 = 87

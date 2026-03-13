@@ -10,8 +10,6 @@
 // - Error categorization (file_not_found, parse_error, timeout, etc.)
 // - Dedup hit rates (L1 cache, L2 cache, exact, near)
 //
-// SPDX-License-Identifier: PMPL-1.0-or-later
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 
