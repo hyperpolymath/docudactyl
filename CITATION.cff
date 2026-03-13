@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "Docudactyl"
+abstract: "Multi-format HPC document extraction engine targeting British Library scale"
+version: "0.4.0"
+date-released: "2026-02-21"
+license: "PMPL-1.0-or-later"
+repository-code: "https://github.com/hyperpolymath/docudactyl"
+authors:
+  - family-names: "Jewell"
+    given-names: "Jonathan D.A."
+    email: "jonathan.jewell@open.ac.uk"
+    alias: "hyperpolymath"
+keywords:
+  - document-processing
+  - hpc
+  - chapel
+  - pdf-extraction
+  - ocr
+  - british-library
+  - distributed-computing

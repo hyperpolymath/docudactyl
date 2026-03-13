@@ -1,0 +1,102 @@
+# STOP — READ THIS FIRST
+
+**This file must be read first by all AI agents.**
+
+## What Is This?
+
+This is the AI manifest for **docudactyl** — a multi-format HPC document
+extraction engine targeting British Library scale (~170M items).
+
+## Canonical Locations
+
+### Machine-Readable Metadata: `.machine_readable/` ONLY
+
+| File | Purpose |
+|------|---------|
+| `STATE.scm` | Project state, progress, blockers |
+| `META.scm` | Architecture decisions, governance |
+| `ECOSYSTEM.scm` | Position in ecosystem, relationships |
+| `AGENTIC.scm` | AI agent interaction patterns |
+| `NEUROSYM.scm` | Neurosymbolic integration config |
+| `PLAYBOOK.scm` | Operational runbook |
+
+**CRITICAL:** These files must NEVER be created in the repository root.
+
+### Agent Instructions
+
+| File | Scope |
+|------|-------|
+| `0-AI-MANIFEST.a2ml` | Universal AI entry point (this file) |
+| `.claude/CLAUDE.md` | Claude-specific patterns |
+
+## Repository Structure
+
+```
+docudactyl/
+├── 0-AI-MANIFEST.a2ml         # THIS FILE
+├── src/
+│   ├── chapel/                # HPC engine (hot path)
+│   │   ├── DocudactylHPC.chpl # Main entry point
+│   │   ├── Config.chpl        # Runtime config (--manifestPath, etc.)
+│   │   ├── ManifestLoader.chpl
+│   │   ├── FFIBridge.chpl     # C FFI declarations
+│   │   ├── FaultHandler.chpl
+│   │   ├── ProgressReporter.chpl
+│   │   ├── ShardedOutput.chpl
+│   │   ├── ResultAggregator.chpl
+│   │   ├── Checkpoint.chpl    # Resume after node failure
+│   │   └── ContentType.chpl
+│   ├── Docudactyl/ABI/        # Idris2 formal proofs (compile-time)
+│   │   ├── Types.idr          # ContentKind, ParseStatus, ParseResult
+│   │   ├── Layout.idr         # Struct layout proofs (952 bytes, 8-byte aligned)
+│   │   └── Foreign.idr        # FFI declarations with safety proofs
+│   ├── ocaml/                 # Offline Scheme transformer (not HPC)
+│   ├── ada/                   # Terminal UI (standalone)
+│   └── julia/                 # Legacy (frozen, replaced by Chapel)
+├── ffi/zig/                   # Zig FFI dispatcher (zero-cost C wrapper)
+│   ├── src/docudactyl_ffi.zig # Multi-format parser (Poppler, Tesseract, FFmpeg, etc.)
+│   ├── build.zig
+│   └── test/integration_test.zig
+├── generated/abi/             # C headers generated from Idris2 ABI
+├── deploy/
+│   ├── Containerfile          # Multi-stage build (Wolfi runtime)
+│   └── slurm-docudactyl.sh   # Slurm job script (64+ nodes)
+├── .machine_readable/         # ALL structured metadata
+└── .well-known/               # RFC 9116, ai.txt, humans.txt
+```
+
+## Core Invariants
+
+1. **No state files in root** — `.machine_readable/` is authoritative
+2. **Chapel is the hot path** — OCaml/Julia are NOT called during HPC runs
+3. **Zig FFI has zero runtime overhead** — compiles to same code as direct C calls
+4. **No banned patterns in Idris2** — no `believe_me`, `assert_total`, `unsafePerformIO`
+5. **License: PMPL-1.0-or-later** on all original code
+6. **Author: Jonathan D.A. Jewell** `<jonathan.jewell@open.ac.uk>`
+7. **Containers use Podman** — never Docker. Files named `Containerfile`, never `Dockerfile`
+8. **Base images: Chainguard Wolfi** — `cgr.dev/chainguard/wolfi-base:latest`
+
+## Architecture (Hot Path)
+
+```
+Manifest (170M paths) → Chapel (block-distribute across N locales)
+  → forall: Zig FFI (detect format, dispatch to C library)
+    → Poppler (PDF), Tesseract (Image OCR), FFmpeg (Audio/Video),
+      libxml2 (EPUB), GDAL (GeoSpatial), libvips (Image metadata)
+  → Per-locale sharded output + checkpoint files
+  → Global reduce → run-report.scm + run-report.json
+```
+
+## Session Startup
+
+1. Read this manifest
+2. Read `.machine_readable/STATE.scm` for current progress
+3. Read `.claude/CLAUDE.md` for code patterns
+4. Check `TOPOLOGY.md` for completion dashboard
+
+## Meta
+
+- Format Version: 1.0.0
+- Created: 2026-02-20
+- License: PMPL-1.0-or-later
+- Protocol: https://github.com/hyperpolymath/0-ai-gatekeeper-protocol

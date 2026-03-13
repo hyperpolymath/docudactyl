@@ -1,0 +1,38 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "name": "Docudactyl",
+  "description": "Multi-format HPC document extraction engine targeting British Library scale (~170M items)",
+  "version": "0.4.0",
+  "dateCreated": "2025-12-27",
+  "dateModified": "2026-02-21",
+  "license": "https://github.com/hyperpolymath/palimpsest-license",
+  "codeRepository": "https://github.com/hyperpolymath/docudactyl",
+  "programmingLanguage": [
+    "Chapel",
+    "Zig",
+    "Idris2",
+    "OCaml",
+    "Ada",
+    "Julia"
+  ],
+  "author": [
+    {
+      "@type": "Person",
+      "givenName": "Jonathan D.A.",
+      "familyName": "Jewell",
+      "email": "jonathan.jewell@open.ac.uk"
+    }
+  ],
+  "keywords": [
+    "document-processing",
+    "hpc",
+    "chapel",
+    "pdf-extraction",
+    "ocr",
+    "british-library",
+    "distributed-computing",
+    "zig-ffi",
+    "idris2-abi"
+  ]
+}

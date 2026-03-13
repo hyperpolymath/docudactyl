@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# humanstxt.org
+
+/* TEAM */
+Maintainer: Jonathan D.A. Jewell (hyperpolymath)
+Contact: jonathan.jewell@open.ac.uk
+From: United Kingdom
+
+/* PROJECT */
+Name: Docudactyl HPC
+Purpose: Multi-format document extraction at British Library scale
+Last update: 2026-02-20
+Standards: RSR (Rhodium Standard Repository)
+License: PMPL-1.0-or-later (Palimpsest MPL)
+Components: Chapel HPC, Zig FFI, Idris2 ABI, OCaml, Ada
+Tools: just, Podman, Chainguard Wolfi, Slurm

@@ -1,0 +1,36 @@
+= Docudactyl - Citation Guide
+:toc:
+
+== BibTeX
+
+[source,bibtex]
+----
+@software{docudactyl_2026,
+  author = {Jewell, Jonathan D.A.},
+  title = {Docudactyl: Multi-format HPC Document Extraction Engine},
+  year = {2026},
+  url = {https://github.com/hyperpolymath/docudactyl},
+  license = {PMPL-1.0-or-later}
+}
+----
+
+== Harvard Style
+
+Jewell, J.D.A. (2026) _Docudactyl: Multi-format HPC Document Extraction Engine_ [Computer software]. Available at: https://github.com/hyperpolymath/docudactyl
+
+== OSCOLA
+
+Jonathan D.A. Jewell, 'Docudactyl' (2026) <https://github.com/hyperpolymath/docudactyl>
+
+== MLA
+
+Jewell, Jonathan D.A. "Docudactyl." 2026, github.com/hyperpolymath/docudactyl.
+
+== APA 7
+
+Jewell, J.D.A. (2026). _Docudactyl_ [Computer software]. GitHub. https://github.com/hyperpolymath/docudactyl
+
+== See Also
+
+* link:../CITATION.cff[CITATION.cff]
+* link:../codemeta.json[codemeta.json]

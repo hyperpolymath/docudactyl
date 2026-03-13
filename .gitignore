@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Docudactyl .gitignore
+
+# ── OS & Editor ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# ── Build Artifacts ──────────────────────────────────────────────
+/bin/
+/build/
+/dist/
+/obj/
+/out/
+/target/
+/_build/
+
+# ── Ada/SPARK ────────────────────────────────────────────────────
+*.ali
+src/ada/obj/
+src/ada/bin/
+
+# ── Chapel ───────────────────────────────────────────────────────
+*.chpl.tmp.*
+*.real
+
+# ── Idris2 ───────────────────────────────────────────────────────
+build/ttc/
+build/depends/
+
+# ── Julia ────────────────────────────────────────────────────────
+*.jl.cov
+*.jl.mem
+src/julia/Manifest.toml
+
+# ── OCaml ────────────────────────────────────────────────────────
+src/ocaml/_build/
+
+# ── Zig ──────────────────────────────────────────────────────────
+ffi/zig/.zig-cache/
+ffi/zig/zig-out/
+
+# ── HPC Output ───────────────────────────────────────────────────
+/output/
+/output-*/
+/logs/
+
+# ── Cache & Data ─────────────────────────────────────────────────
+*.lmdb
+*.mdb
+/scratch/
+
+# ── Dependencies ─────────────────────────────────────────────────
+/node_modules/
+/vendor/
+/deps/
+/.elixir_ls/
+
+# ── Secrets ──────────────────────────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# ── Test & Coverage ──────────────────────────────────────────────
+/coverage/
+htmlcov/
+
+# ── Logs & Temp ──────────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
+/tmp/
+
+# ── Crash Recovery ───────────────────────────────────────────────
+ai-cli-crash-capture/
