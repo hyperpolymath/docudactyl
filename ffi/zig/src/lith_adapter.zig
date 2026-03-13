@@ -177,11 +177,20 @@ pub const Reader = struct {
 // ============================================================================
 
 /// Map PREMIS MIME type to a Lithoglyph bofig_evidence evidence_type value.
+/// Covers all 15 evidence types defined in the Lithoglyph OpenAPI spec:
+/// court_filing, deposition, testimony, flight_log, financial_record,
+/// communication, photograph, video, official_statistics, news_report,
+/// document, dataset, interview, affidavit, subpoena, other.
+///
+/// MIME-only detection is inherently limited — many types (deposition,
+/// testimony, affidavit, subpoena, flight_log) share the same MIME as
+/// generic documents. Callers should override via investigation context
+/// or NER stage output when available.
 fn detectEvidenceType(mime: []const u8) []const u8 {
     if (mime.len == 0) return "document";
 
-    // PDF documents — could be court filings, depositions, or general documents.
-    // Default to "document"; the caller can override based on investigation context.
+    // PDF documents — default to "court_filing" as the most common
+    // investigative PDF type; callers override via context.
     if (std.mem.startsWith(u8, mime, "application/pdf")) return "court_filing";
 
     // Images
@@ -190,10 +199,10 @@ fn detectEvidenceType(mime: []const u8) []const u8 {
     // Video
     if (std.mem.startsWith(u8, mime, "video/")) return "video";
 
-    // Audio (depositions, interviews)
+    // Audio (depositions, interviews, testimony recordings)
     if (std.mem.startsWith(u8, mime, "audio/")) return "interview";
 
-    // Spreadsheets / CSV — likely financial records
+    // Spreadsheets / CSV — financial records or datasets
     if (std.mem.startsWith(u8, mime, "text/csv") or
         std.mem.startsWith(u8, mime, "application/vnd.ms-excel") or
         std.mem.startsWith(u8, mime, "application/vnd.openxmlformats-officedocument.spreadsheetml"))
@@ -201,10 +210,22 @@ fn detectEvidenceType(mime: []const u8) []const u8 {
         return "financial_record";
     }
 
-    // Plain text / HTML
+    // Structured data formats — datasets
+    if (std.mem.startsWith(u8, mime, "application/json") or
+        std.mem.startsWith(u8, mime, "application/xml") or
+        std.mem.startsWith(u8, mime, "text/xml") or
+        std.mem.startsWith(u8, mime, "application/vnd.openxmlformats-officedocument.presentationml"))
+    {
+        return "dataset";
+    }
+
+    // HTML — news reports or general documents
+    if (std.mem.eql(u8, mime, "text/html")) return "news_report";
+
+    // Plain text
     if (std.mem.startsWith(u8, mime, "text/")) return "document";
 
-    // Email
+    // Email / messaging
     if (std.mem.startsWith(u8, mime, "message/")) return "communication";
 
     return "document";
@@ -479,13 +500,15 @@ pub fn stageResultsToJson(
     w.print("\"legal_statute_refs\":{d}", .{legal_statutes}) catch return null;
     w.writeAll("},") catch return null;
 
-    // PROMPT scores
-    w.print("\"prompt_provenance\":{d},", .{prompt.provenance}) catch return null;
-    w.print("\"prompt_replicability\":{d},", .{prompt.replicability}) catch return null;
-    w.print("\"prompt_objective\":{d},", .{prompt.objective}) catch return null;
-    w.print("\"prompt_methodology\":{d},", .{prompt.methodology}) catch return null;
-    w.print("\"prompt_publication\":{d},", .{prompt.publication}) catch return null;
-    w.print("\"prompt_transparency\":{d},", .{prompt.transparency}) catch return null;
+    // PROMPT scores — nested object matching Lithoglyph PromptScoresInput schema
+    w.writeAll("\"promptScores\":{") catch return null;
+    w.print("\"provenance\":{d},", .{prompt.provenance}) catch return null;
+    w.print("\"replicability\":{d},", .{prompt.replicability}) catch return null;
+    w.print("\"objective\":{d},", .{prompt.objective}) catch return null;
+    w.print("\"methodology\":{d},", .{prompt.methodology}) catch return null;
+    w.print("\"publication\":{d},", .{prompt.publication}) catch return null;
+    w.print("\"transparency\":{d}", .{prompt.transparency}) catch return null;
+    w.writeAll("},") catch return null;
 
     // Sensitivity defaults to public for automated ingestion.
     writeJsonString(w, "sensitivity_level", "public") catch return null;
@@ -588,6 +611,13 @@ test "detectEvidenceType maps MIME types correctly" {
     try std.testing.expectEqualStrings("communication", detectEvidenceType("message/rfc822"));
     try std.testing.expectEqualStrings("document", detectEvidenceType(""));
     try std.testing.expectEqualStrings("document", detectEvidenceType("application/octet-stream"));
+
+    // New evidence type coverage
+    try std.testing.expectEqualStrings("dataset", detectEvidenceType("application/json"));
+    try std.testing.expectEqualStrings("dataset", detectEvidenceType("application/xml"));
+    try std.testing.expectEqualStrings("dataset", detectEvidenceType("text/xml"));
+    try std.testing.expectEqualStrings("news_report", detectEvidenceType("text/html"));
+    try std.testing.expectEqualStrings("financial_record", detectEvidenceType("application/vnd.ms-excel"));
 }
 
 test "computePromptScores basic scoring" {
