@@ -1,4 +1,6 @@
-// Docudactyl → Lithoglyph Ingest Adapter
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+// Docudactyl — Lithoglyph Ingest Adapter
 //
 // Reads a Cap'n Proto StageResults message buffer and converts it to a JSON
 // evidence record compatible with Lithoglyph's bofig_evidence schema.
@@ -6,9 +8,6 @@
 // The adapter extracts fields from the Cap'n Proto binary layout defined in
 // capnp.zig, maps them to Lithoglyph schema fields, and computes auto-PROMPT
 // epistemological scores from extraction metadata.
-//
-// SPDX-License-Identifier: PMPL-1.0-or-later
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 const capnp = @import("capnp.zig");

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 // Docudactyl — GPU-Accelerated OCR Coprocessor
 //
 // Batched OCR using GPU acceleration when available:
@@ -16,9 +18,6 @@
 // and collects results via ddac_gpu_ocr_collect(). The coprocessor maintains
 // an internal queue and flushes batches to the GPU when full or on explicit
 // flush.
-//
-// SPDX-License-Identifier: PMPL-1.0-or-later
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 

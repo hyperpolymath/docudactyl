@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 // Docudactyl FFI — Unified Multi-Format Parser Dispatcher
 //
 // Thin Zig wrapper around C libraries for HPC document processing.
@@ -11,9 +13,6 @@
 //   - libxml2          (EPUB/XHTML parsing)
 //   - libgdal          (geospatial: shapefiles, GeoTIFF)
 //   - libvips          (image dimensions/metadata)
-//
-// SPDX-License-Identifier: PMPL-1.0-or-later
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 const stages = @import("stages.zig");

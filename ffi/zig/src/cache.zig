@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 // Docudactyl Cache — LMDB-Backed Result Cache
 //
 // Stores parsed document results keyed by file path. On cache hit
@@ -17,9 +19,6 @@
 //
 // Each Chapel locale should have its own LMDB environment to avoid
 // cross-locale write locking. Reads are fully concurrent.
-//
-// SPDX-License-Identifier: PMPL-1.0-or-later
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 

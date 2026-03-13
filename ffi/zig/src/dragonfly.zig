@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 // Docudactyl — Dragonfly / Redis RESP Client (L2 Cache)
 //
 // Minimal RESP2 client for Dragonfly (Redis-compatible) cross-locale cache.
@@ -10,9 +12,6 @@
 //   - 25x throughput on same hardware
 //   - Multi-threaded (no single-thread bottleneck)
 //   - Compatible with RESP2 protocol
-//
-// SPDX-License-Identifier: PMPL-1.0-or-later
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 
@@ -41,9 +40,15 @@ pub const DragonflyClient = struct {
         const addr = std.net.Address.parseIp4(host, port) catch return null;
         const stream = std.net.tcpConnectToAddress(addr) catch return null;
 
-        // Set a reasonable timeout (5 seconds)
-        stream.handle.setReadTimeout(5_000_000_000) catch {};
-        stream.handle.setWriteTimeout(5_000_000_000) catch {};
+        // Set a reasonable timeout (5 seconds). Failure to set timeouts is
+        // non-fatal — operations will block indefinitely on network stalls,
+        // but the connection itself is still usable.
+        stream.handle.setReadTimeout(5_000_000_000) catch |err| {
+            std.log.debug("Dragonfly: failed to set read timeout: {s}", .{@errorName(err)});
+        };
+        stream.handle.setWriteTimeout(5_000_000_000) catch |err| {
+            std.log.debug("Dragonfly: failed to set write timeout: {s}", .{@errorName(err)});
+        };
 
         return .{
             .stream = stream,

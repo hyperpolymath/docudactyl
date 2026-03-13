@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 // Docudactyl Processing Stages — Configurable Analysis Pipeline
 //
 // Each stage is enabled via a bitmask flag passed to ddac_parse.
@@ -9,9 +11,6 @@
 //   Fast (10-50 docs/s):     language_detect, readability, keywords, citations
 //   Medium (0.2-5 docs/s):   ocr_confidence, perceptual_hash, toc_extract
 //   Slow (minutes/doc):      multi_lang_ocr, whisper, handwriting_ocr (ML stubs)
-//
-// SPDX-License-Identifier: PMPL-1.0-or-later
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 const capnp = @import("capnp.zig");
@@ -1324,5 +1323,7 @@ pub fn runStages(ctx: StageContext) void {
 
     // ── Write Cap'n Proto message to file ─────────────────────────────
 
-    b.writeMessage(file) catch {};
+    b.writeMessage(file) catch |err| {
+        std.log.err("Failed to write stages Cap'n Proto output: {s}", .{@errorName(err)});
+    };
 }

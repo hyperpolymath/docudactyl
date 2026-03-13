@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 // Docudactyl — Preprocessing Conduit
 //
 // Lightweight pre-processing pipeline that runs before the main Chapel parse.
@@ -11,9 +13,6 @@
 // Chapel calls ddac_conduit_process() on a batch of paths. The conduit
 // returns an array of ConduitResult structs that the main loop uses to
 // skip invalid files and pre-populate cache keys.
-//
-// SPDX-License-Identifier: PMPL-1.0-or-later
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 

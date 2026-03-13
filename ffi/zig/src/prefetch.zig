@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 // Docudactyl — I/O Prefetcher (Linux io_uring + fadvise)
 //
 // Addresses Wall 2 (I/O bandwidth) by prefetching upcoming documents
@@ -10,9 +12,6 @@
 // The prefetcher manages a sliding window of N upcoming files.
 // Chapel tasks call ddac_prefetch_hint() before processing each document
 // to keep the pipeline full.
-//
-// SPDX-License-Identifier: PMPL-1.0-or-later
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -182,8 +181,11 @@ fn prefetchWithUring(state: *PrefetchState, fd: std.posix.fd_t) void {
         sqe.prep_fadvise(fd, 0, @intCast(READAHEAD_SIZE), 3); // POSIX_FADV_WILLNEED
         sqe.user_data = @intCast(fd);
 
-        // Submit without waiting
-        _ = ring_state.ring.submit() catch {};
+        // Submit without waiting — failure is non-fatal; the file will still
+        // be read synchronously when the parser reaches it.
+        _ = ring_state.ring.submit() catch |err| {
+            std.log.debug("io_uring prefetch submit failed: {s}", .{@errorName(err)});
+        };
     }
 }
 

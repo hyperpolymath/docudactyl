@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 // Docudactyl — Minimal Cap'n Proto Single-Segment Message Builder
 //
 // Produces valid Cap'n Proto binary messages readable by any standard decoder.
@@ -5,9 +7,6 @@
 // No external dependencies — pure Zig implementation of the wire format.
 //
 // Wire format reference: https://capnproto.org/encoding.html
-//
-// SPDX-License-Identifier: PMPL-1.0-or-later
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 
