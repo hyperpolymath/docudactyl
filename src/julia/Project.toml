@@ -1,9 +1,9 @@
-# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 # SPDX-License-Identifier: PMPL-1.0-or-later
 
 name = "Docudactyl"
 uuid = "a7e3f2d1-8c4b-4e5a-9f6d-2b3c4a5e6f7d"
-authors = ["Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>"]
+authors = ["Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"]
 version = "0.4.0"
 
 [deps]

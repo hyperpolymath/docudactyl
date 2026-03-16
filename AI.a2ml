@@ -25,8 +25,8 @@ an offline Scheme transformer, Ada provides a TUI, and Julia is legacy.
 
 1. **No `.git` directories inside subdirectories** — this is a monorepo child
 2. **PMPL-1.0-or-later license** on all original code
-3. **Author**: Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>
-4. **Copyright**: Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
+3. **Author**: Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+4. **Copyright**: Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 5. **Version**: 0.4.0 across all components
 6. **Containerfile** never Dockerfile; **Podman** never Docker
 7. **Idris2 ABI**: No `believe_me`, `assert_total`, `Admitted` — all proofs genuine

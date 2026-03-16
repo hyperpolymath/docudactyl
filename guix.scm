@@ -8,7 +8,7 @@
 ;; This defines the development environment for building Docudactyl HPC.
 ;; The actual build is driven by the Justfile (just build-hpc).
 ;;
-;; Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
+;; Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 (use-modules (guix packages)
              (guix build-system gnu)

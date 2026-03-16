@@ -72,7 +72,7 @@ docudactyl/
 3. **Zig FFI has zero runtime overhead** — compiles to same code as direct C calls
 4. **No banned patterns in Idris2** — no `believe_me`, `assert_total`, `unsafePerformIO`
 5. **License: PMPL-1.0-or-later** on all original code
-6. **Author: Jonathan D.A. Jewell** `<jonathan.jewell@open.ac.uk>`
+6. **Author: Jonathan D.A. Jewell** `<j.d.a.jewell@open.ac.uk>`
 7. **Containers use Podman** — never Docker. Files named `Containerfile`, never `Dockerfile`
 8. **Base images: Chainguard Wolfi** — `cgr.dev/chainguard/wolfi-base:latest`
 
