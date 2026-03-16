@@ -284,7 +284,7 @@ man:
         ".SH DESCRIPTION" \
         "HPC document processing engine for British Library scale corpora." \
         ".SH AUTHOR" \
-        "Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>" \
+        "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>" \
         > docs/man/{{project}}.1
     echo "Generated: docs/man/{{project}}.1"
 
@@ -771,7 +771,7 @@ generate-abi-header:
     printf ' * Struct size: %s bytes (proven in Layout.idr)\n' "$STRUCT_SIZE"
     printf ' *\n'
     printf ' * SPDX-License-Identifier: PMPL-1.0-or-later\n'
-    printf ' * Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>\n'
+    printf ' * Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>\n'
     printf ' */\n\n'
     printf '#ifndef DOCUDACTYL_FFI_H\n'
     printf '#define DOCUDACTYL_FFI_H\n\n'

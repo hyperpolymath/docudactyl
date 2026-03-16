@@ -12,7 +12,7 @@
 #   capnp decode schema/stages.capnp StageResults < result.stages.capnp
 #
 # SPDX-License-Identifier: PMPL-1.0-or-later
-# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 @0xd4c8e2f1a3b59670;
 
