@@ -13,12 +13,12 @@ extraction engine targeting British Library scale (~170M items).
 
 | File | Purpose |
 |------|---------|
-| `STATE.scm` | Project state, progress, blockers |
-| `META.scm` | Architecture decisions, governance |
-| `ECOSYSTEM.scm` | Position in ecosystem, relationships |
-| `AGENTIC.scm` | AI agent interaction patterns |
-| `NEUROSYM.scm` | Neurosymbolic integration config |
-| `PLAYBOOK.scm` | Operational runbook |
+| `.machine_readable/6a2/STATE.a2ml` | Project state, progress, blockers |
+| `.machine_readable/6a2/META.a2ml` | Architecture decisions, governance |
+| `.machine_readable/6a2/ECOSYSTEM.a2ml` | Position in ecosystem, relationships |
+| `.machine_readable/6a2/AGENTIC.a2ml` | AI agent interaction patterns |
+| `.machine_readable/6a2/NEUROSYM.a2ml` | Neurosymbolic integration config |
+| `.machine_readable/6a2/PLAYBOOK.a2ml` | Operational runbook |
 
 **CRITICAL:** These files must NEVER be created in the repository root.
 
@@ -90,7 +90,7 @@ Manifest (170M paths) → Chapel (block-distribute across N locales)
 ## Session Startup
 
 1. Read this manifest
-2. Read `.machine_readable/STATE.scm` for current progress
+2. Read `.machine_readable/6a2/STATE.a2ml` for current progress
 3. Read `.claude/CLAUDE.md` for code patterns
 4. Check `TOPOLOGY.md` for completion dashboard
 
