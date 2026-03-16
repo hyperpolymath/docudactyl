@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Clade declaration — part of the gv-clade-index registry
+# See: https://github.com/hyperpolymath/gv-clade-index
+
+[identity]
+uuid = "e7e383de-3984-57d6-b4e0-68642c41b9ac"
+primary-forge = "github"
+primary-owner = "hyperpolymath"
+canonical-name = "docudactyl"
+prefixed-name = "ap-docudactyl"
+
+[clade]
+primary = "ap"
+secondary = []
+assigned = "2026-03-16"
+rationale = ""
+
+[forges]
+github = "hyperpolymath/docudactyl"
+gitlab = "hyperpolymath/docudactyl"
+bitbucket = "hyperpolymath/docudactyl"
+
+[lineage]
+type = "standalone"
+parent = "Documentation tool"
+born = "2026-03-16"
