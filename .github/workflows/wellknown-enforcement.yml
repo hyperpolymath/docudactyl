@@ -13,6 +13,8 @@ on:
     # Weekly expiry check
     - cron: '0 9 * * 1'
   workflow_dispatch:
+permissions: read-all
+
 
 jobs:
   validate:
