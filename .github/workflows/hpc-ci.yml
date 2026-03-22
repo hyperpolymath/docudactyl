@@ -27,7 +27,8 @@ on:
       - 'generated/abi/**'
       - '.github/workflows/hpc-ci.yml'
 
-permissions: read-all
+permissions:
+  contents: read
 
 env:
   ZIG_VERSION: '0.15.2'

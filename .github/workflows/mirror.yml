@@ -8,7 +8,8 @@ on:
       - 'v*'
   workflow_dispatch:
 
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   mirror-gitlab:

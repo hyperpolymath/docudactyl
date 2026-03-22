@@ -28,4 +28,5 @@ jobs:
           fi
 
           echo "✅ Package policy check passed"
-permissions: read-all
+permissions:
+  contents: read

@@ -72,4 +72,5 @@ jobs:
           echo "║                                                            ║"
           echo "║  Blocked: TypeScript, Go, npm, Python (non-Salt)          ║"
           echo "╚════════════════════════════════════════════════════════════╝"
-permissions: read-all
+permissions:
+  contents: read

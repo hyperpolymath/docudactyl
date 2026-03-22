@@ -42,4 +42,5 @@ jobs:
           else
             echo "✅ Core documentation present"
           fi
-permissions: read-all
+permissions:
+  contents: read
