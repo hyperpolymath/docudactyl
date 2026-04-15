@@ -13,6 +13,8 @@ set dotenv-load := true
 set positional-arguments := true
 
 # Project metadata
+import? "contractile.just"
+
 project := "docudactyl"
 version := "0.4.0"
 tier := "1"  # Tier 1: Chapel + OCaml + Ada + Zig FFI
