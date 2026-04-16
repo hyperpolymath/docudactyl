@@ -1,17 +1,16 @@
-||| Foreign Function Interface Declarations for Docudactyl
-|||
-||| Declares all C-compatible functions implemented in the Zig FFI layer
-||| (ffi/zig/src/docudactyl_ffi.zig). Chapel calls these directly; Idris2
-||| provides the type-level proofs that the interface is correct.
-|||
 ||| SPDX-License-Identifier: PMPL-1.0-or-later
-||| Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+||| Foreign Function Interface Declarations for DOCUDACTYL
+|||
+||| This module declares all C-compatible functions that will be
+||| implemented in the Zig FFI layer.
+|||
+||| All functions are declared here with type signatures and safety proofs.
+||| Implementations live in ffi/zig/
 
 module Docudactyl.ABI.Foreign
 
 import Docudactyl.ABI.Types
 import Docudactyl.ABI.Layout
-import Data.So
 
 %default total
 
@@ -19,23 +18,22 @@ import Data.So
 -- Library Lifecycle
 --------------------------------------------------------------------------------
 
-||| Initialise the Docudactyl FFI library.
-||| Returns a handle to Tesseract/GDAL/vips contexts, or Nothing on failure.
+||| Initialize the library
+||| Returns a handle to the library instance, or Nothing on failure
 export
-%foreign "C:ddac_init, libdocudactyl_ffi"
+%foreign "C:docudactyl_init, libdocudactyl"
 prim__init : PrimIO Bits64
 
-||| Safe wrapper for library initialisation
+||| Safe wrapper for library initialization
 export
 init : IO (Maybe Handle)
 init = do
-  ptr <- primIO Docudactyl.ABI.Foreign.prim__init
+  ptr <- primIO prim__init
   pure (createHandle ptr)
 
-||| Free all library resources (Tesseract, GDAL, vips).
-||| Safe to call with a null pointer.
+||| Clean up library resources
 export
-%foreign "C:ddac_free, libdocudactyl_ffi"
+%foreign "C:docudactyl_free, libdocudactyl"
 prim__free : Bits64 -> PrimIO ()
 
 ||| Safe wrapper for cleanup
@@ -44,45 +42,116 @@ free : Handle -> IO ()
 free h = primIO (prim__free (handlePtr h))
 
 --------------------------------------------------------------------------------
--- Core Parse Operation
+-- Core Operations
 --------------------------------------------------------------------------------
 
-||| Parse a document. Dispatches to the correct C library based on file extension.
-|||
-||| Parameters (as raw Bits64 pointers to C strings):
-|||   handle     - library handle from ddac_init
-|||   input_path - absolute path to input document
-|||   output_path - absolute path for extracted content output
-|||   output_fmt  - output format (0=scheme, 1=json, 2=csv)
-|||
-||| Returns a raw pointer to a ddac_parse_result_t struct.
-||| In practice, Chapel reads the struct fields directly via extern record.
+||| Example operation: process data
 export
-%foreign "C:ddac_parse, libdocudactyl_ffi"
-prim__parse : Bits64 -> Bits64 -> Bits64 -> Bits64 -> PrimIO Bits64
+%foreign "C:docudactyl_process, libdocudactyl"
+prim__process : Bits64 -> Bits32 -> PrimIO Bits32
 
-||| Safe wrapper for parse with type-checked status
+||| Safe wrapper with error handling
 export
-parse : Handle -> (inputPath : Bits64) -> (outputPath : Bits64) -> (outputFmt : Bits64) -> IO (Either ParseStatus Bits64)
-parse h inputPath outputPath outputFmt = do
-  resultPtr <- primIO (Docudactyl.ABI.Foreign.prim__parse (handlePtr h) inputPath outputPath outputFmt)
-  if resultPtr == 0
-    then pure (Left Error)
-    else pure (Right resultPtr)
+process : Handle -> Bits32 -> IO (Either Result Bits32)
+process h input = do
+  result <- primIO (prim__process (handlePtr h) input)
+  pure $ case result of
+    0 => Left Error
+    n => Right n
+
+--------------------------------------------------------------------------------
+-- String Operations
+--------------------------------------------------------------------------------
+
+||| Convert C string to Idris String
+export
+%foreign "support:idris2_getString, libidris2_support"
+prim__getString : Bits64 -> String
+
+||| Free C string
+export
+%foreign "C:docudactyl_free_string, libdocudactyl"
+prim__freeString : Bits64 -> PrimIO ()
+
+||| Get string result from library
+export
+%foreign "C:docudactyl_get_string, libdocudactyl"
+prim__getResult : Bits64 -> PrimIO Bits64
+
+||| Safe string getter
+export
+getString : Handle -> IO (Maybe String)
+getString h = do
+  ptr <- primIO (prim__getResult (handlePtr h))
+  if ptr == 0
+    then pure Nothing
+    else do
+      let str = prim__getString ptr
+      primIO (prim__freeString ptr)
+      pure (Just str)
+
+--------------------------------------------------------------------------------
+-- Array/Buffer Operations
+--------------------------------------------------------------------------------
+
+||| Process array data
+export
+%foreign "C:docudactyl_process_array, libdocudactyl"
+prim__processArray : Bits64 -> Bits64 -> Bits32 -> PrimIO Bits32
+
+||| Safe array processor
+export
+processArray : Handle -> (buffer : Bits64) -> (len : Bits32) -> IO (Either Result ())
+processArray h buf len = do
+  result <- primIO (prim__processArray (handlePtr h) buf len)
+  pure $ case resultFromInt result of
+    Just Ok => Right ()
+    Just err => Left err
+    Nothing => Left Error
+  where
+    resultFromInt : Bits32 -> Maybe Result
+    resultFromInt 0 = Just Ok
+    resultFromInt 1 = Just Error
+    resultFromInt 2 = Just InvalidParam
+    resultFromInt 3 = Just OutOfMemory
+    resultFromInt 4 = Just NullPointer
+    resultFromInt _ = Nothing
+
+--------------------------------------------------------------------------------
+-- Error Handling
+--------------------------------------------------------------------------------
+
+||| Get last error message
+export
+%foreign "C:docudactyl_last_error, libdocudactyl"
+prim__lastError : PrimIO Bits64
+
+||| Retrieve last error as string
+export
+lastError : IO (Maybe String)
+lastError = do
+  ptr <- primIO prim__lastError
+  if ptr == 0
+    then pure Nothing
+    else pure (Just (prim__getString ptr))
+
+||| Get error description for result code
+export
+errorDescription : Result -> String
+errorDescription Ok = "Success"
+errorDescription Error = "Generic error"
+errorDescription InvalidParam = "Invalid parameter"
+errorDescription OutOfMemory = "Out of memory"
+errorDescription NullPointer = "Null pointer"
 
 --------------------------------------------------------------------------------
 -- Version Information
 --------------------------------------------------------------------------------
 
-||| Get library version string
+||| Get library version
 export
-%foreign "C:ddac_version, libdocudactyl_ffi"
+%foreign "C:docudactyl_version, libdocudactyl"
 prim__version : PrimIO Bits64
-
-||| Convert C string pointer to Idris String
-export
-%foreign "support:idris2_getString, libidris2_support"
-prim__getString : Bits64 -> String
 
 ||| Get version as string
 export
@@ -91,60 +160,58 @@ version = do
   ptr <- primIO prim__version
   pure (prim__getString ptr)
 
---------------------------------------------------------------------------------
--- Error Handling Utilities
---------------------------------------------------------------------------------
-
-||| Extract ParseStatus from a raw result status integer
+||| Get library build info
 export
-decodeStatus : Bits32 -> ParseStatus
-decodeStatus n = case intToParseStatus n of
-  Just s  => s
-  Nothing => Error
+%foreign "C:docudactyl_build_info, libdocudactyl"
+prim__buildInfo : PrimIO Bits64
 
-||| Extract ContentKind from a raw result content_kind integer
+||| Get build information
 export
-decodeContentKind : Bits32 -> ContentKind
-decodeContentKind n = case intToContentKind n of
-  Just k  => k
-  Nothing => Unknown
-
-||| Human-readable description of a parse status
-export
-statusDescription : ParseStatus -> String
-statusDescription Ok               = "Success"
-statusDescription Error             = "Generic error"
-statusDescription FileNotFound      = "File not found"
-statusDescription ParseError        = "Parse error"
-statusDescription NullPointer       = "Null pointer"
-statusDescription UnsupportedFormat = "Unsupported format"
-statusDescription OutOfMemory       = "Out of memory"
-
-||| Human-readable description of a content kind
-export
-contentKindDescription : ContentKind -> String
-contentKindDescription PDF        = "PDF document"
-contentKindDescription Image      = "Image (OCR)"
-contentKindDescription Audio      = "Audio recording"
-contentKindDescription Video      = "Video recording"
-contentKindDescription EPUB       = "EPUB e-book"
-contentKindDescription GeoSpatial = "Geospatial data"
-contentKindDescription Unknown    = "Unknown format"
+buildInfo : IO String
+buildInfo = do
+  ptr <- primIO prim__buildInfo
+  pure (prim__getString ptr)
 
 --------------------------------------------------------------------------------
--- Safety Proofs
+-- Callback Support
 --------------------------------------------------------------------------------
 
-||| Proof that init returns a non-null handle on success
-||| (This is a specification -- the Zig implementation must guarantee it)
-||| Given a proof that (ptr /= 0) evaluates to True, we can safely
-||| construct a Handle by converting the Bool equality to a So witness.
-export
-initNonNull : (ptr : Bits64) -> (prf : (ptr /= 0) = True) -> Maybe Handle
-initNonNull ptr prf = Just (MkHandle ptr (rewrite prf in Oh))
+||| Callback function type (C ABI)
+public export
+Callback : Type
+Callback = Bits64 -> Bits32 -> Bits32
 
-||| Proof that free is idempotent (calling twice is safe)
-||| Encoded as a specification: ddac_free(NULL) is a no-op in Zig.
+||| Register a callback
 export
-freeIdempotent : String
-freeIdempotent = "ddac_free checks for null; double-free is a no-op"
+%foreign "C:docudactyl_register_callback, libdocudactyl"
+prim__registerCallback : Bits64 -> AnyPtr -> PrimIO Bits32
+
+||| Safe callback registration
+export
+registerCallback : Handle -> Callback -> IO (Either Result ())
+registerCallback h cb = do
+  result <- primIO (prim__registerCallback (handlePtr h) (cast cb))
+  pure $ case resultFromInt result of
+    Just Ok => Right ()
+    Just err => Left err
+    Nothing => Left Error
+  where
+    resultFromInt : Bits32 -> Maybe Result
+    resultFromInt 0 = Just Ok
+    resultFromInt _ = Just Error
+
+--------------------------------------------------------------------------------
+-- Utility Functions
+--------------------------------------------------------------------------------
+
+||| Check if library is initialized
+export
+%foreign "C:docudactyl_is_initialized, libdocudactyl"
+prim__isInitialized : Bits64 -> PrimIO Bits32
+
+||| Check initialization status
+export
+isInitialized : Handle -> IO Bool
+isInitialized h = do
+  result <- primIO (prim__isInitialized (handlePtr h))
+  pure (result /= 0)
