@@ -28,6 +28,12 @@ const financial_extract = @import("financial_extract.zig");
 const speaker_id = @import("speaker_id.zig");
 const reextract = @import("reextract.zig");
 const quality_stats = @import("quality_stats.zig");
+// ── Investigator-Focused Modules (citizen & investigative journalism) ──
+const flight_log = @import("flight_log.zig");
+const entity_graph = @import("entity_graph.zig");
+const redaction_recovery = @import("redaction_recovery.zig");
+const evasion_detect = @import("evasion_detect.zig");
+const investigator_summary = @import("investigator_summary.zig");
 
 // Ensure submodule exports are included in the shared library
 comptime {
@@ -43,6 +49,11 @@ comptime {
     _ = speaker_id;
     _ = reextract;
     _ = quality_stats;
+    _ = flight_log;
+    _ = entity_graph;
+    _ = redaction_recovery;
+    _ = evasion_detect;
+    _ = investigator_summary;
 }
 
 const c = @cImport({
