@@ -10,7 +10,7 @@
   title = {Docudactyl: Multi-format HPC Document Extraction Engine},
   year = {2026},
   url = {https://github.com/hyperpolymath/docudactyl},
-  license = {PMPL-1.0-or-later}
+  license = {MPL-2.0}
 }
 ----
 

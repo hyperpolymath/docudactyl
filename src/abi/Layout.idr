@@ -5,7 +5,7 @@
 |||
 ||| The primary struct is ddac_parse_result_t -- 952 bytes on LP64.
 |||
-||| SPDX-License-Identifier: PMPL-1.0-or-later
+||| SPDX-License-Identifier: MPL-2.0
 ||| Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
 
 module Docudactyl.ABI.Layout

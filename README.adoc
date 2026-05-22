@@ -1,5 +1,5 @@
 = Docudactyl
-image:https://img.shields.io/badge/License-PMPL_1.0-blue.svg[PMPL-1.0-or-later,link="https://github.com/hyperpolymath/palimpsest-license"]
+image:https://img.shields.io/badge/License-PMPL_1.0-blue.svg[MPL-2.0,link="https://github.com/hyperpolymath/palimpsest-license"]
 
 :toc:
 :sectnums:
@@ -16,7 +16,7 @@ image:https://img.shields.io/badge/Ada-2022-blue[Ada]
 
 == License & Philosophy
 
-This project is licensed under **PMPL-1.0-or-later** (Palimpsest License).
+This project is licensed under **MPL-2.0** (Palimpsest License).
 
 The full licence text is in `license/PMPL-1.0.txt`. The canonical source is the https://github.com/hyperpolymath/palimpsest-license[palimpsest-license] repository.
 
@@ -232,7 +232,7 @@ This is a Tier 1 RSR project. The hot path uses Chapel + Zig (systems languages)
 
 == License
 
-SPDX-License-Identifier: PMPL-1.0-or-later
+SPDX-License-Identifier: MPL-2.0
 
 == Links
 

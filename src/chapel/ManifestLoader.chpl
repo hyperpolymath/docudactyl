@@ -18,7 +18,7 @@
 //   Pass 1: Count valid lines (skip comments, blanks)
 //   Pass 2: Read entries into a block-distributed array
 //
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 module ManifestLoader {

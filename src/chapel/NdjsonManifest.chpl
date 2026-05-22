@@ -12,7 +12,7 @@
 // Streaming output format (one JSON result per line, appended):
 //   {"path":"...","status":0,"pages":42,"words":15000,"time_ms":123.4}
 //
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 module NdjsonManifest {

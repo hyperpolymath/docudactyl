@@ -3,7 +3,7 @@
 // Extern declarations matching ffi/zig/src/docudactyl_ffi.zig.
 // Chapel calls these to dispatch document parsing to native C parsers.
 //
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 module FFIBridge {

@@ -1,6 +1,6 @@
 # Epstein Files — Docudactyl Extraction Tests & Benchmarks
 #
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # Author: Jonathan D.A. Jewell
 # Created: 2026-03-13
 #

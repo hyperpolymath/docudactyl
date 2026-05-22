@@ -1,7 +1,7 @@
 # Docudactyl — Investigator Toolkit
 
 <!--
-SPDX-License-Identifier: PMPL-1.0-or-later
+SPDX-License-Identifier: MPL-2.0
 Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 -->
 
@@ -277,5 +277,5 @@ beyond Poppler + GLib (which Docudactyl already links).
 
 ## License
 
-All new modules are released under **PMPL-1.0-or-later** (with MPL-2.0
+All new modules are released under **MPL-2.0** (with MPL-2.0
 fallback), matching the rest of Docudactyl.

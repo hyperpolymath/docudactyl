@@ -772,7 +772,7 @@ generate-abi-header:
     printf ' * Source: src/Docudactyl/ABI/Types.idr, Layout.idr, Foreign.idr\n'
     printf ' * Struct size: %s bytes (proven in Layout.idr)\n' "$STRUCT_SIZE"
     printf ' *\n'
-    printf ' * SPDX-License-Identifier: PMPL-1.0-or-later\n'
+    printf ' * SPDX-License-Identifier: MPL-2.0\n'
     printf ' * Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>\n'
     printf ' */\n\n'
     printf '#ifndef DOCUDACTYL_FFI_H\n'
@@ -962,7 +962,7 @@ tour:
     echo "  Docudactyl — Guided Tour"
     echo "═══════════════════════════════════════════════════"
     echo ""
-    echo 'This project is licensed under **PMPL-1.0-or-later** (Palimpsest License).'
+    echo 'This project is licensed under **MPL-2.0** (Palimpsest License).'
     echo ""
     echo "Key directories:"
     echo "  src/                      Source code" 

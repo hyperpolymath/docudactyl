@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 = Docudactyl — Show Me The Receipts
 :toc:
 :icons: font
@@ -7,7 +7,7 @@ The README makes claims. This file backs them up.
 
 [quote, README]
 ____
-This project is licensed under **PMPL-1.0-or-later** (Palimpsest License).
+This project is licensed under **MPL-2.0** (Palimpsest License).
 ____
 
 == Technology Choices

@@ -10,7 +10,7 @@
 # Chapel is NOT managed by asdf — it's system-installed via rpm.
 # Current tested version: 2.7.0
 #
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 
 zig 0.15.2
 idris2 0.8.0

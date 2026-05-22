@@ -3,7 +3,7 @@
 // All `config const` values are tunable at launch without recompilation:
 //   ./docudactyl-hpc --manifestPath=paths.txt --chunkSize=512 -nl 64
 //
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 module Config {

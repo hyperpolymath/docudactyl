@@ -4,7 +4,7 @@
 // Each locale writes only to its own shard, eliminating I/O contention.
 // Optional post-run merge combines all shards.
 //
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 module ShardedOutput {

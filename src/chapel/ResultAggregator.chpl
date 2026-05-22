@@ -3,7 +3,7 @@
 // Accumulates per-locale statistics during processing, then reduces
 // across all locales for a global summary report.
 //
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 module ResultAggregator {
@@ -220,7 +220,7 @@ module ResultAggregator {
       var w = f.writer(locking=false);
 
       w.writeln(";; Docudactyl HPC Run Report");
-      w.writeln(";; SPDX-License-Identifier: PMPL-1.0-or-later");
+      w.writeln(";; SPDX-License-Identifier: MPL-2.0");
       w.writeln("(run-report");
       w.writeln("  (metadata");
       w.writeln("    (generator \"docudactyl-hpc\")");

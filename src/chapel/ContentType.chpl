@@ -3,7 +3,7 @@
 // Detects document/media format from file extension.
 // Maps to ContentKind enum in the Zig FFI layer.
 //
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 module ContentType {

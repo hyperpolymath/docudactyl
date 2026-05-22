@@ -1,4 +1,4 @@
-;; SPDX-License-Identifier: PMPL-1.0-or-later
+;; SPDX-License-Identifier: MPL-2.0
 ;; Docudactyl HPC — Guix development environment
 ;;
 ;; Usage:
@@ -38,7 +38,7 @@ British Library scale (~170M items).  Chapel orchestrates across HPC
 cluster nodes, dispatching to C libraries via a zero-cost Zig FFI layer.
 Supports PDF, images (OCR), audio, video, EPUB, and geospatial formats.")
   (home-page "https://github.com/hyperpolymath/docudactyl")
-  (license #f)  ; PMPL-1.0-or-later (not in Guix license list)
+  (license #f)  ; MPL-2.0 (not in Guix license list)
 
   ;; Development inputs — these are the C libraries linked by the Zig FFI.
   ;; Chapel and Zig are not yet packaged in Guix; install via asdf.

@@ -6,7 +6,7 @@
 // These tests exercise the C-exported functions by linking against
 // libdocudactyl_ffi.so — they verify the actual ABI, not internal Zig code.
 //
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # humanstxt.org
 
 /* TEAM */
@@ -11,6 +11,6 @@ Name: Docudactyl HPC
 Purpose: Multi-format document extraction at British Library scale
 Last update: 2026-02-20
 Standards: RSR (Rhodium Standard Repository)
-License: PMPL-1.0-or-later (Palimpsest MPL)
+License: MPL-2.0 (Palimpsest MPL)
 Components: Chapel HPC, Zig FFI, Idris2 ABI, OCaml, Ada
 Tools: just, Podman, Chainguard Wolfi, Slurm

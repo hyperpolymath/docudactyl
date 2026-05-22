@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
@@ -6,7 +6,7 @@ title: "Docudactyl"
 abstract: "Multi-format HPC document extraction engine targeting British Library scale"
 version: "0.4.0"
 date-released: "2026-02-21"
-license: "PMPL-1.0-or-later"
+license: "MPL-2.0"
 repository-code: "https://github.com/hyperpolymath/docudactyl"
 authors:
   - family-names: "Jewell"
