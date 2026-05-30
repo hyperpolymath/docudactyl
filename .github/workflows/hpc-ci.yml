@@ -60,7 +60,8 @@ jobs:
             libpoppler-glib-dev libglib2.0-dev \
             libtesseract-dev libleptonica-dev \
             libavformat-dev libavcodec-dev libavutil-dev \
-            libxml2-dev libgdal-dev libvips-dev
+            libxml2-dev libgdal-dev libvips-dev \
+            liblmdb-dev libarchive-dev libcurl4-openssl-dev
 
       - name: Build FFI (ReleaseFast)
         run: cd ffi/zig && zig build -Doptimize=ReleaseFast
@@ -112,6 +113,17 @@ jobs:
           tar xzf "/tmp/${CHPL_TARBALL}" -C /opt/
           echo "CHPL_HOME=/opt/chapel-${CHAPEL_VERSION}" >> "$GITHUB_ENV"
           echo "/opt/chapel-${CHAPEL_VERSION}/bin/linux64-x86_64" >> "$GITHUB_PATH"
+
+      - name: Install C runtime libraries (FFI .so transitively pulls these)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libpoppler-glib8t64 libglib2.0-0t64 \
+            libtesseract5 libleptonica-dev \
+            libavformat60 libavcodec60 libavutil58 \
+            libxml2 libgdal34t64 libvips42t64 \
+            liblmdb0 libarchive13t64 libcurl4t64 \
+            tesseract-ocr-eng
 
       - name: Verify Chapel installation
         run: chpl --version
@@ -169,6 +181,7 @@ jobs:
             libtesseract5 libleptonica-dev \
             libavformat60 libavcodec60 libavutil58 \
             libxml2 libgdal34t64 libvips42t64 \
+            liblmdb0 libarchive13t64 libcurl4t64 \
             tesseract-ocr-eng
 
       - name: Verify Chapel installation
