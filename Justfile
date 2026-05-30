@@ -582,10 +582,36 @@ test-ffi:
     @echo "Running Zig FFI tests..."
     toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && cd {{zig_ffi}} && zig build test'
 
-# Check Chapel parse validity
+# Check Chapel parse validity (metalayer + smoke; --main-module
+# disambiguates the two `proc main()` files)
 check-chapel:
     @echo "Checking Chapel syntax..."
-    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && chpl --parse-only {{chapel_src}}/DocudactylHPC.chpl {{chapel_src}}/*.chpl'
+    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && chpl --parse-only --main-module DocudactylHPC {{chapel_src}}/DocudactylHPC.chpl {{chapel_src}}/*.chpl'
+
+# Decoupled FFI smoke (per docudactyl#29 / echidna#146 pattern).
+# Compiles just smoke.chpl + FFIBridge.chpl — does not pull in the
+# DocudactylHPC metalayer, so this gate stays green even if the
+# metalayer breaks. Build oracle for the FFI ABI alone.
+check-smoke:
+    @echo "Parse-checking FFI smoke..."
+    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && chpl --no-codegen {{chapel_src}}/smoke.chpl {{chapel_src}}/FFIBridge.chpl'
+
+# Build the FFI smoke binary (links against Zig FFI library).
+build-smoke: build-ffi
+    @echo "Building FFI smoke binary..."
+    @mkdir -p bin
+    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && \
+         ABSPATH=$$(cd {{zig_ffi}}/zig-out/lib && pwd) && \
+         chpl {{chapel_src}}/smoke.chpl \
+              {{chapel_src}}/FFIBridge.chpl \
+              -o bin/docudactyl-smoke \
+              -L{{zig_ffi}}/zig-out/lib -ldocudactyl_ffi \
+              --ldflags="-Wl,-rpath,$$ABSPATH"'
+
+# Run the FFI smoke (init/version/free without manifest or full metalayer).
+run-smoke: build-smoke
+    @echo "Running FFI smoke..."
+    bin/docudactyl-smoke
 
 # Check all HPC C library dependencies and versions
 deps-check:
