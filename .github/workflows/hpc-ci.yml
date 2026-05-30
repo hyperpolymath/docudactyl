@@ -32,7 +32,9 @@ permissions:
 
 env:
   ZIG_VERSION: '0.15.2'
-  CHAPEL_VERSION: '2.3.0'
+  # Chapel 2.8.0 is required by docudactyl#29 — FileSystem.stat was
+  # removed; code now uses OS.POSIX.stat. echidna#146 set the same floor.
+  CHAPEL_VERSION: '2.8.0'
   IDRIS2_VERSION: '0.8.0'
 
 jobs:
@@ -58,7 +60,8 @@ jobs:
             libpoppler-glib-dev libglib2.0-dev \
             libtesseract-dev libleptonica-dev \
             libavformat-dev libavcodec-dev libavutil-dev \
-            libxml2-dev libgdal-dev libvips-dev
+            libxml2-dev libgdal-dev libvips-dev \
+            liblmdb-dev libarchive-dev libcurl4-openssl-dev
 
       - name: Build FFI (ReleaseFast)
         run: cd ffi/zig && zig build -Doptimize=ReleaseFast
@@ -79,6 +82,69 @@ jobs:
             ffi/zig/zig-out/lib/libdocudactyl_ffi.so*
             ffi/zig/zig-out/lib/libdocudactyl_ffi.a
           retention-days: 1
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 2a: FFI Smoke — decoupled from the metalayer (docudactyl#29 / echidna#146)
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Builds and runs `src/chapel/smoke.chpl` linked against the Zig FFI library
+  # WITHOUT pulling in the full DocudactylHPC metalayer. Strict gate: if the
+  # FFI ABI surface or the chapel/Zig boundary regresses, this fails fast even
+  # when the metalayer build is broken. (No continue-on-error.)
+  # ═══════════════════════════════════════════════════════════════════════════
+  build-smoke:
+    name: Chapel FFI Smoke
+    needs: build-ffi
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Download FFI artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ffi-libs
+          path: ffi/zig/zig-out/lib/
+
+      - name: Install Chapel
+        run: |
+          CHPL_TARBALL="chapel-${CHAPEL_VERSION}-linux64-x86_64.tar.gz"
+          CHPL_URL="https://github.com/chapel-lang/chapel/releases/download/${CHAPEL_VERSION}/${CHPL_TARBALL}"
+          wget -q "${CHPL_URL}" -O "/tmp/${CHPL_TARBALL}"
+          tar xzf "/tmp/${CHPL_TARBALL}" -C /opt/
+          echo "CHPL_HOME=/opt/chapel-${CHAPEL_VERSION}" >> "$GITHUB_ENV"
+          echo "/opt/chapel-${CHAPEL_VERSION}/bin/linux64-x86_64" >> "$GITHUB_PATH"
+
+      - name: Install C runtime libraries (FFI .so transitively pulls these)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libpoppler-glib8t64 libglib2.0-0t64 \
+            libtesseract5 libleptonica-dev \
+            libavformat60 libavcodec60 libavutil58 \
+            libxml2 libgdal34t64 libvips42t64 \
+            liblmdb0 libarchive13t64 libcurl4t64 \
+            tesseract-ocr-eng
+
+      - name: Verify Chapel installation
+        run: chpl --version
+
+      - name: Build FFI smoke binary
+        run: |
+          mkdir -p bin
+          ABSPATH=$(cd ffi/zig/zig-out/lib && pwd)
+          chmod +x ffi/zig/zig-out/lib/libdocudactyl_ffi.so* || true
+          chpl src/chapel/smoke.chpl \
+               src/chapel/FFIBridge.chpl \
+               -o bin/docudactyl-smoke \
+               -Lffi/zig/zig-out/lib -ldocudactyl_ffi \
+               --ldflags="-Wl,-rpath,$ABSPATH"
+
+      - name: Run FFI smoke (init/version/free; no manifest required)
+        run: |
+          export LD_LIBRARY_PATH="ffi/zig/zig-out/lib:$LD_LIBRARY_PATH"
+          OUT=$(bin/docudactyl-smoke)
+          echo "$OUT"
+          echo "$OUT" | grep -qE '^\[smoke\] PASS$'
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Job 2: Chapel HPC — Build + Smoke Test
@@ -115,6 +181,7 @@ jobs:
             libtesseract5 libleptonica-dev \
             libavformat60 libavcodec60 libavutil58 \
             libxml2 libgdal34t64 libvips42t64 \
+            liblmdb0 libarchive13t64 libcurl4t64 \
             tesseract-ocr-eng
 
       - name: Verify Chapel installation

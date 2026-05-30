@@ -33,6 +33,7 @@ use Version;
 use FileSystem;
 use IO;
 use Path;
+use OS.POSIX;
 
 // Minimum Chapel version required (2.7.0 for --parse-only, begin ref intent)
 param DOCUDACTYL_MIN_CHAPEL_MAJOR = 2;
@@ -207,7 +208,7 @@ proc main() throws {
   const fmtCode = outputFormatCode();
   const resultSize: c_size_t = 952; // sizeof(ddac_parse_result_t)
 
-  forall idx in dynamic(docEntries.domain, chunkSize) {
+  forall idx in dynamic(docEntries.domain, chunkSize) with (ref ndjsonWriter) {
     // Each task gets its own FFI handle (owns Tesseract/GDAL contexts)
     var handle = ddac_init();
     defer ddac_free(handle);
@@ -300,17 +301,21 @@ proc main() throws {
         // Use conduit file_size, but still need mtime from stat()
         fsize = conduitResult.file_size;
         try {
-          var finfo = stat(inputPath);
-          mtime = finfo.mtime: int(64);
+          var sb: struct_stat;
+          if stat(inputPath.c_str(), c_ptrTo(sb)) == 0 {
+            mtime = sb.st_mtim.tv_sec: int(64);
+          }
         } catch {
           // stat failed — proceed with normal parse
         }
       } else {
         // Fall back to stat() for plain manifests without conduit
         try {
-          var finfo = stat(inputPath);
-          mtime = finfo.mtime: int(64);
-          fsize = finfo.size: int(64);
+          var sb: struct_stat;
+          if stat(inputPath.c_str(), c_ptrTo(sb)) == 0 {
+            mtime = sb.st_mtim.tv_sec: int(64);
+            fsize = sb.st_size: int(64);
+          }
         } catch {
           // stat failed — proceed with normal parse
         }
@@ -370,9 +375,11 @@ proc main() throws {
           fsize = entry.size;
         } else {
           try {
-            var finfo = stat(inputPath);
-            mtime = finfo.mtime: int(64);
-            fsize = finfo.size: int(64);
+            var sb: struct_stat;
+            if stat(inputPath.c_str(), c_ptrTo(sb)) == 0 {
+              mtime = sb.st_mtim.tv_sec: int(64);
+              fsize = sb.st_size: int(64);
+            }
           } catch {
             // stat failed — skip caching
           }

@@ -249,7 +249,7 @@ fn extractCurrencyAmounts(text: []const u8, result: *FinancialResult) void {
                 }
             }
             if (is_currency) {
-                var j = i + 4;
+                const j = i + 4;
                 if (j < text.len and isDigit(text[j])) {
                     const parsed = parseDecimal(text, j);
                     if (parsed.end > j and result.amount_count < MAX_ITEMS) {

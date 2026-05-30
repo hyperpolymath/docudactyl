@@ -87,10 +87,15 @@ module NdjsonManifest {
       valEnd += 1;
     }
 
-    if valEnd > valStart then
-      return line[valStart..#(valEnd - valStart)];
-    else
+    if valEnd > valStart {
+      try {
+        return line[valStart..#(valEnd - valStart)];
+      } catch {
+        return "";
+      }
+    } else {
       return "";
+    }
   }
 
   /** Extract an integer value for a given key from a JSON line.
@@ -173,15 +178,20 @@ module NdjsonManifest {
 
       line += ',"parse_time_ms":' + parseTimeMs:string;
 
-      // Include SHA-256 if present
-      const sha = string.createCopyingBuffer(result.sha256: c_ptrConst(c_char));
-      if sha.size > 0 then
-        line += ',"sha256":' + jsonEscapeString(sha);
+      // Include SHA-256 if present (FFI strings are well-formed in practice;
+      // throws on UTF-8 boundary errors are skipped to preserve forall task)
+      try {
+        const sha = string.createCopyingBuffer(result.sha256: c_ptrConst(c_char));
+        if sha.size > 0 then
+          line += ',"sha256":' + jsonEscapeString(sha);
+      } catch { }
 
       // Include title if present
-      const title = string.createCopyingBuffer(result.title: c_ptrConst(c_char));
-      if title.size > 0 then
-        line += ',"title":' + jsonEscapeString(title);
+      try {
+        const title = string.createCopyingBuffer(result.title: c_ptrConst(c_char));
+        if title.size > 0 then
+          line += ',"title":' + jsonEscapeString(title);
+      } catch { }
 
       line += "}";
 
