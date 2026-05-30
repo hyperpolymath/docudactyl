@@ -114,10 +114,10 @@ fn cpuid(leaf: u32, subleaf: u32) CpuidResult {
     var edx: u32 = undefined;
 
     asm volatile ("cpuid"
-        : ({eax}) = "={eax}" -> u32,
-          ({ebx}) = "={ebx}" -> u32,
-          ({ecx}) = "={ecx}" -> u32,
-          ({edx}) = "={edx}" -> u32,
+        : [_] "={eax}" (eax),
+          [_] "={ebx}" (ebx),
+          [_] "={ecx}" (ecx),
+          [_] "={edx}" (edx),
         : [_] "{eax}" (leaf),
           [_] "{ecx}" (subleaf),
     );

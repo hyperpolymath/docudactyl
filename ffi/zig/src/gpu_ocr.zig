@@ -218,7 +218,8 @@ fn initTesseract() ?*anyopaque {
     return null; // Placeholder — actual Tesseract handle comes from ddac_init()
 }
 
-fn freeTesseract(_handle: ?*anyopaque) void {
+fn freeTesseract(handle: ?*anyopaque) void {
+    _ = handle;
     // Cleanup handled by ddac_free() in the main FFI
 }
 
