@@ -1,0 +1,242 @@
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=github)](https://github.com/sponsors/hyperpolymath)
+
+= Docudactyl
+image:https://img.shields.io/badge/License-PMPL_1.0-blue.svg[MPL-2.0,link="https://github.com/hyperpolymath/palimpsest-license"]
+
+:toc:
+:sectnums:
+:source-highlighter: rouge
+
+// Badges
+image:https://img.shields.io/badge/RSR-Tier%201-gold[RSR Tier 1]
+image:https://img.shields.io/badge/Phase-v0.4.0-green[Phase]
+image:https://img.shields.io/badge/Chapel-2.3+-4E9A06?logo=data:image/svg+xml;base64,[Chapel]
+image:https://img.shields.io/badge/Zig-0.15+-F7A41D?logo=zig[Zig]
+image:https://img.shields.io/badge/Idris2-0.8+-5E5086[Idris2]
+image:https://img.shields.io/badge/OCaml-4.14+-EC6813?logo=ocaml[OCaml]
+image:https://img.shields.io/badge/Ada-2022-blue[Ada]
+
+== License & Philosophy
+
+This project is licensed under **MPL-2.0** (Palimpsest License).
+
+The full licence text is in `license/PMPL-1.0.txt`. The canonical source is the https://github.com/hyperpolymath/palimpsest-license[palimpsest-license] repository.
+
+== Overview
+
+**Docudactyl** is a multi-format HPC document extraction engine designed for British Library scale (~170 million items). It processes PDFs, images, audio, video, EPUB, and geospatial data across hundreds of cluster nodes.
+
+=== Architecture
+
+[source]
+----
+┌──────────────────────────────────────────────────────────────────┐
+│                    Chapel HPC Orchestrator                       │
+│             (64-512 locales, dynamic load balancing)             │
+├──────────────────────────────────────────────────────────────────┤
+│  Conduit    │  L1/L2 Cache  │  Checkpoint  │  Progress Reporter │
+│  (validate) │  (LMDB+DFly)  │  (resume)    │  (ETA, rate)       │
+├──────────────────────────────────────────────────────────────────┤
+│                       Zig FFI Layer                              │
+│              (51 C-exported functions, zero overhead)            │
+├────────┬──────────┬──────────┬──────────┬──────────┬────────────┤
+│Poppler │Tesseract │ FFmpeg   │ libxml2  │  GDAL    │  libvips   │
+│ (PDF)  │  (OCR)   │(AV meta) │ (EPUB)   │  (Geo)   │  (Image)   │
+├────────┴──────────┴──────────┴──────────┴──────────┴────────────┤
+│  dlopen: ONNX Runtime (ML) │ PaddleOCR (GPU OCR) │ CUDA        │
+├──────────────────────────────────────────────────────────────────┤
+│  Idris2 ABI Proofs (14 types, 5 struct layouts, 51 FFI decls)  │
+└──────────────────────────────────────────────────────────────────┘
+
+Offline:  OCaml docudactyl-scm (JSON/text → Scheme S-expressions)
+Viewer:   Ada TUI (interactive document inspection)
+Legacy:   Julia extraction scripts (replaced by Chapel pipeline)
+----
+
+=== Performance Estimates (British Library, 170M items)
+
+[cols="1,2"]
+|===
+|Scenario |Estimate
+
+|Cold run (256 nodes + GPU)
+|~3.7 hours
+
+|Warm run (L1+L2 cache)
+|~4.4 minutes
+
+|Incremental (5% new files)
+|~8 minutes
+|===
+
+== Quick Start
+
+[source,bash]
+----
+# Verify dependencies
+just deps-check
+
+# Build Zig FFI + Chapel binary
+just build-hpc
+
+# Run all tests
+just test-hpc
+
+# Process a directory of documents
+just generate-manifest /path/to/documents manifest.txt
+bin/docudactyl-hpc --manifestPath=manifest.txt --outputDir=output/
+
+# Or on an HPC cluster (64 nodes)
+sbatch deploy/slurm-docudactyl.sh
+----
+
+== Components
+
+=== Chapel: HPC Engine (hot path)
+
+The Chapel component distributes document processing across cluster nodes with dynamic load balancing.
+
+Modules: Config, ContentType, FFIBridge, ManifestLoader, NdjsonManifest, FaultHandler, ProgressReporter, ShardedOutput, ResultAggregator, Checkpoint, DocudactylHPC.
+
+=== Zig FFI: Parser Dispatch Layer
+
+10 submodules providing a unified C ABI for 7 content types and 20 processing stages:
+
+* **Core**: `docudactyl_ffi.zig` -- init, free, parse, version (dispatches by content type)
+* **Stages**: 20 analysis stages with Cap'n Proto output (language, readability, keywords, citations, OCR confidence, perceptual hash, TOC, NER, Whisper, image classify, layout, handwriting, etc.)
+* **Cache**: L1 LMDB per-locale (zero-copy mmap) + L2 Dragonfly cross-locale
+* **Conduit**: Magic-byte content detection (15 formats), SHA-256, validation
+* **GPU OCR**: PaddleOCR CUDA > Tesseract CUDA > CPU (via dlopen)
+* **ML Inference**: ONNX Runtime -- NER, Whisper, ImageClassify, Layout, Handwriting (TensorRT > CUDA > OpenVINO > CPU)
+* **Hardware Crypto**: SHA-NI, AVX2, AVX-512, AES-NI, ARM SHA2 acceleration
+* **I/O Prefetch**: io_uring (Linux 5.6+) with posix_fadvise fallback
+
+=== Idris2: Formal ABI Proofs
+
+Dependent types proving struct layout, alignment, and enum correctness:
+
+* 14 proven types (ContentKind, ParseStatus, MlStatus, MlStage, ExecProvider, Sha256Tier, etc.)
+* 5 struct layout proofs (ParseResult 952B, MlResult 48B, CryptoCaps 16B, OcrResult 48B, ConduitResult 88B)
+* 51 FFI declarations matching the C header 1:1
+
+=== OCaml: Offline Scheme Transformer
+
+Transforms extracted JSON/text into machine-readable Scheme S-expressions. Not in the HPC hot path.
+
+[source,bash]
+----
+docudactyl-scm document.pdf -o document.scm
+docudactyl-scm extracted.json -o extracted.scm
+----
+
+=== Ada: Terminal UI
+
+Interactive viewer for inspecting extracted documents.
+
+[source,bash]
+----
+docudactyl-tui extracted.json
+----
+
+== Justfile Recipes
+
+[source,bash]
+----
+# Build
+just build-hpc        # Zig FFI + Chapel binary
+just build-ffi        # Zig FFI only
+just build-idris      # Idris2 ABI proofs
+just build-ocaml      # OCaml transformer
+just build-ada        # Ada TUI
+
+# Test
+just test-hpc         # All HPC tests (FFI + error paths)
+just test-ffi         # Zig integration tests (40+ tests)
+just test-scale       # Scale test (2105+ files)
+just test-idris       # Idris2 proofs compile
+just test-ocaml       # OCaml tests
+just test-ada         # Ada build check
+
+# Deploy
+just deps-check       # Verify dependencies
+just generate-manifest <dir> [output]
+just generate-abi-header
+just loc              # Lines of code
+----
+
+== Directory Structure
+
+[source]
+----
+docudactyl/
+├── src/
+│   ├── chapel/                # HPC engine (11 modules)
+│   ├── Docudactyl/ABI/        # Idris2 ABI proofs (3 modules)
+│   ├── ocaml/                 # Offline Scheme transformer
+│   ├── ada/                   # Terminal UI
+│   └── julia/                 # Legacy extraction (replaced)
+│
+├── ffi/zig/                   # Zig FFI layer (10 submodules)
+│   ├── src/                   # Source
+│   └── test/                  # Integration tests
+│
+├── generated/abi/             # Auto-generated C header
+├── schema/                    # Cap'n Proto schema
+├── deploy/                    # Containerfile + Slurm script
+├── contractiles/              # K9 contractile configs
+├── .machine_readable/         # SCM checkpoint files
+├── Justfile                   # Task runner
+└── docudactyl.ipkg            # Idris2 package
+----
+
+== Requirements
+
+=== System Dependencies
+
+* **Chapel** 2.3+ (HPC engine)
+* **Zig** 0.15+ (FFI layer)
+* **Idris2** 0.8+ (ABI proofs)
+* **C libraries**: Poppler, Tesseract, FFmpeg, libxml2, GDAL, libvips, LMDB
+* **Optional**: ONNX Runtime, PaddleOCR, CUDA (for ML/GPU features)
+* **OCaml** 4.14+ (offline Scheme transformer)
+* **Ada** GNAT/gprbuild (terminal UI)
+
+=== Container Deployment
+
+[source,bash]
+----
+podman build -f deploy/Containerfile -t docudactyl-hpc .
+podman run --rm -v /data/manifest.txt:/manifest.txt:ro \
+                 -v /data/output:/output \
+                 docudactyl-hpc --manifestPath=/manifest.txt
+----
+
+=== Cluster Deployment (Slurm)
+
+[source,bash]
+----
+# Edit deploy/slurm-docudactyl.sh for your cluster
+sbatch deploy/slurm-docudactyl.sh
+----
+
+== Ethical Use
+
+This tool is designed for:
+
+* Document analysis and archival processing at national library scale
+* Research and verification of redaction practices
+* Accessibility improvements for PDF content
+* Multi-format metadata extraction and cataloguing
+
+== RSR Compliance
+
+This is a Tier 1 RSR project. The hot path uses Chapel + Zig (systems languages). Legacy components (Julia, OCaml, Ada) serve offline/auxiliary roles.
+
+== License
+
+SPDX-License-Identifier: MPL-2.0
+
+== Links
+
+* https://github.com/hyperpolymath/docudactyl[GitHub Repository]
+* https://rhodium.sh[Rhodium Standard]
