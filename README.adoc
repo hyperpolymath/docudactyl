@@ -1,5 +1,9 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 = Docudactyl
-image:https://img.shields.io/badge/License-PMPL_1.0-blue.svg[MPL-2.0,link="https://github.com/hyperpolymath/palimpsest-license"]
+image:https://img.shields.io/badge/OpenSSF-Best_Practices-green?logo=openssourcesecurity[OpenSSF Best Practices,link="https://www.bestpractices.dev/en/projects/new?repo_url=https://github.com/hyperpolymath/docudactyl"]
+
+image:https://img.shields.io/badge/License-MPL_2.0-blue.svg[MPL-2.0,link="https://github.com/hyperpolymath/palimpsest-license"]
 
 :toc:
 :sectnums:
@@ -16,9 +20,9 @@ image:https://img.shields.io/badge/Ada-2022-blue[Ada]
 
 == License & Philosophy
 
-This project is licensed under **MPL-2.0** (Palimpsest License).
+This project is licensed under **MPL-2.0** (MPL-2.0).
 
-The full licence text is in `license/PMPL-1.0.txt`. The canonical source is the https://github.com/hyperpolymath/palimpsest-license[palimpsest-license] repository.
+The full licence text is in `license/MPL-2.0.txt`. The canonical source is the https://github.com/hyperpolymath/palimpsest-license[palimpsest-license] repository.
 
 == Overview
 
