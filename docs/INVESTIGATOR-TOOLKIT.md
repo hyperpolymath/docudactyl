@@ -1,9 +1,8 @@
-# Docudactyl — Investigator Toolkit
-
 <!--
 SPDX-License-Identifier: MPL-2.0
-Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 -->
+# Docudactyl — Investigator Toolkit
 
 This document describes the **investigator-focused extraction modules** added
 to Docudactyl for use by citizen journalists, independent researchers, and

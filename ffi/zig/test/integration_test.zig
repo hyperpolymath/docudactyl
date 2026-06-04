@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Docudactyl FFI Integration Tests
 //
 // Verify that the Zig FFI correctly implements the C ABI declared in
@@ -6,8 +8,6 @@
 // These tests exercise the C-exported functions by linking against
 // libdocudactyl_ffi.so — they verify the actual ABI, not internal Zig code.
 //
-// SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 const testing = std.testing;

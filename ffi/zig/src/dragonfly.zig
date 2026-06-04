@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Docudactyl — Dragonfly / Redis RESP Client (L2 Cache)
 //
 // Minimal RESP2 client for Dragonfly (Redis-compatible) cross-locale cache.

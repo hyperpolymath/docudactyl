@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Docudactyl FFI Build Configuration
 //
 // Builds libdocudactyl_ffi.so (shared) and libdocudactyl_ffi.a (static)
@@ -5,8 +7,6 @@
 //
 // Requires Zig 0.15+
 //
-// SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 const std = @import("std");
 
