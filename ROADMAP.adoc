@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: CC-BY-SA-4.0
 = Docudactyl Roadmap
 
 == Current Status: v0.4.0 (97% complete)

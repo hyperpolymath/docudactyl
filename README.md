@@ -234,7 +234,7 @@ This is a Tier 1 RSR project. The hot path uses Chapel + Zig (systems languages)
 
 == License
 
-SPDX-License-Identifier: MPL-2.0
+SPDX-License-Identifier: CC-BY-SA-4.0
 
 == Links
 
