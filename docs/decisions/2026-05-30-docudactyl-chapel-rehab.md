@@ -5,7 +5,7 @@
 - Closes: [docudactyl#29](https://github.com/hyperpolymath/docudactyl/issues/29)
 - Wave 1 reference: [echidna#146](https://github.com/hyperpolymath/echidna/pull/146)
 - Wave 2 tracker: [proven#126](https://github.com/hyperpolymath/proven/issues/126)
-- SPDX-License-Identifier: MPL-2.0
+- SPDX-License-Identifier: CC-BY-SA-4.0
 
 ## Context
 
