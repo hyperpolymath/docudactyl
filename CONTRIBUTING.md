@@ -2,8 +2,8 @@
 git clone https://github.com/hyperpolymath/docudactyl.git
 cd docudactyl
 
-# Using Nix (recommended for reproducibility)
-nix develop
+# Using Guix (recommended for reproducibility)
+guix develop
 
 # Or using toolbox/distrobox
 toolbox create docudactyl-dev
@@ -41,7 +41,7 @@ docudactyl/
 ├── MAINTAINERS.md
 ├── README.adoc
 ├── SECURITY.md
-├── flake.nix            # Nix flake (Perimeter 1)
+├── flake.guix            # Guix flake (Perimeter 1)
 └── justfile             # Task runner (Perimeter 1)
 ```
 
