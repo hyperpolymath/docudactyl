@@ -1,0 +1,18 @@
+== Audit: FFI unsafe blocks (docudactyl)
+
+*Auditor*: Jonathan D.A. Jewell +
+*Date*: 2026-05-26 +
+*Scope*: panic-attack assail Critical/High UnsafeCode/UnsafeFFI findings
+under `+ffi/zig/src/+`. +
+*Registry*: `+audits/assail-classifications.a2ml+`.
+
+=== Rationale
+
+Zig FFI layer (dragonfly/cache bindings). Each unsafe block is at the
+Zig→C ABI boundary required by the host language to call extern
+functions.
+
+Classification is scoped to `+ffi/zig/src/+`; any unsafe block outside
+that root remains visible.
+
+Refs hyperpolymath/panic-attack#32.
