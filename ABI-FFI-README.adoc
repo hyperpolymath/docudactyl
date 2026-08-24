@@ -1,17 +1,20 @@
-# Docudactyl ABI/FFI Documentation
+== Docudactyl ABI/FFI Documentation
 
-## Overview
+=== Overview
 
-This library follows the **Hyperpolymath RSR Standard** for ABI and FFI design:
+This library follows the *Hyperpolymath RSR Standard* for ABI and FFI
+design:
 
-- **ABI (Application Binary Interface)** defined in **Idris2** with formal proofs
-- **FFI (Foreign Function Interface)** implemented in **Zig** for C compatibility
-- **Generated C headers** bridge Idris2 ABI to Zig FFI
-- **Chapel HPC** calls through standard C ABI for distributed execution
+* *ABI (Application Binary Interface)* defined in *Idris2* with formal
+proofs
+* *FFI (Foreign Function Interface)* implemented in *Zig* for C
+compatibility
+* *Generated C headers* bridge Idris2 ABI to Zig FFI
+* *Chapel HPC* calls through standard C ABI for distributed execution
 
-## Architecture
+=== Architecture
 
-```
+....
 ┌─────────────────────────────────────────────┐
 │  ABI Definitions (Idris2)                   │
 │  src/Docudactyl/ABI/                        │
@@ -48,11 +51,11 @@ This library follows the **Hyperpolymath RSR Standard** for ABI and FFI design:
 │  - 51 extern proc declarations             │
 │  - Distributed across 64-512 locales       │
 └─────────────────────────────────────────────┘
-```
+....
 
-## Directory Structure
+=== Directory Structure
 
-```
+....
 docudactyl/
 ├── src/
 │   └── Docudactyl/
@@ -85,84 +88,137 @@ docudactyl/
 │       └── docudactyl_ffi.h      # Generated from Zig FFI exports
 │
 └── docudactyl.ipkg               # Idris2 package (3 modules)
-```
+....
 
-## Proven Types (Idris2)
+=== Proven Types (Idris2)
 
 The ABI layer formally proves:
 
-| Type | Variants | Proof |
-|------|----------|-------|
-| `ContentKind` | 7 (PDF, Image, Audio, Video, EPUB, GeoSpatial, Unknown) | Enum injectivity |
-| `ParseStatus` | 6 (Ok, Error, FileNotFound, ParseError, UnsupportedFormat, OutOfMemory) | Enum injectivity |
-| `MlStatus` | 5 (Ok, ModelNotFound, InferenceError, InputError, OnnxNotAvailable) | Enum injectivity |
-| `MlStage` | 5 (NER, Whisper, ImageClassify, Layout, Handwriting) | Enum injectivity |
-| `ExecProvider` | 4 (TensorRT, CUDA, OpenVINO, CPU) | Enum injectivity |
-| `Sha256Tier` | 3 (Dedicated, Avx2Buffer, Software) | Enum injectivity |
-| `OcrStatus` | 4 | Enum injectivity |
-| `GpuBackend` | 3 | Enum injectivity |
-| `ConduitValidation` | 4 | Enum injectivity |
+[width="100%",cols="27%,43%,30%",options="header",]
+|===
+|Type |Variants |Proof
+|`+ContentKind+` |7 (PDF, Image, Audio, Video, EPUB, GeoSpatial,
+Unknown) |Enum injectivity
 
-### Struct Layout Proofs
+|`+ParseStatus+` |6 (Ok, Error, FileNotFound, ParseError,
+UnsupportedFormat, OutOfMemory) |Enum injectivity
 
-| Struct | Size | Alignment | Proof |
-|--------|------|-----------|-------|
-| `ParseResult` | 952 bytes | 8-byte (LP64) | `Divides 8 952 = MkDivides 119` |
-| `MlResult` | 48 bytes | 8-byte | `Divides 8 48 = MkDivides 6` |
-| `CryptoCaps` | 16 bytes | 1-byte | Field offset chain |
-| `OcrResult` | 48 bytes | — | Size assertion |
-| `ConduitResult` | 88 bytes | — | Size assertion |
+|`+MlStatus+` |5 (Ok, ModelNotFound, InferenceError, InputError,
+OnnxNotAvailable) |Enum injectivity
 
-## Building
+|`+MlStage+` |5 (NER, Whisper, ImageClassify, Layout, Handwriting) |Enum
+injectivity
 
-### Build FFI Library
+|`+ExecProvider+` |4 (TensorRT, CUDA, OpenVINO, CPU) |Enum injectivity
 
-```bash
+|`+Sha256Tier+` |3 (Dedicated, Avx2Buffer, Software) |Enum injectivity
+
+|`+OcrStatus+` |4 |Enum injectivity
+
+|`+GpuBackend+` |3 |Enum injectivity
+
+|`+ConduitValidation+` |4 |Enum injectivity
+|===
+
+==== Struct Layout Proofs
+
+[width="100%",cols="27%,18%,34%,21%",options="header",]
+|===
+|Struct |Size |Alignment |Proof
+|`+ParseResult+` |952 bytes |8-byte (LP64)
+|`+Divides 8 952 = MkDivides 119+`
+
+|`+MlResult+` |48 bytes |8-byte |`+Divides 8 48 = MkDivides 6+`
+
+|`+CryptoCaps+` |16 bytes |1-byte |Field offset chain
+
+|`+OcrResult+` |48 bytes |— |Size assertion
+
+|`+ConduitResult+` |88 bytes |— |Size assertion
+|===
+
+=== Building
+
+==== Build FFI Library
+
+[source,bash]
+----
 just build-ffi                    # Build via Justfile
 # or directly:
 cd ffi/zig && zig build -Doptimize=ReleaseFast
-```
+----
 
-### Verify Idris2 ABI Proofs
+==== Verify Idris2 ABI Proofs
 
-```bash
+[source,bash]
+----
 just build-idris
 # or directly:
 idris2 --build docudactyl.ipkg
-```
+----
 
-### Generate C Header
+==== Generate C Header
 
-```bash
+[source,bash]
+----
 just generate-abi-header
-```
+----
 
-### Run Tests
+==== Run Tests
 
-```bash
+[source,bash]
+----
 just test-ffi     # 40+ integration tests against C ABI
 just test-idris   # Verify Idris2 proofs compile
-```
+----
 
-## C API Summary
+=== C API Summary
 
-All 51 functions use the `ddac_` prefix:
+All 51 functions use the `+ddac_+` prefix:
 
-| Category | Functions |
-|----------|-----------|
-| **Core lifecycle** | `ddac_init`, `ddac_free`, `ddac_parse`, `ddac_version` |
-| **Handle setters** | `ddac_set_ml_handle`, `ddac_set_gpu_ocr_handle` |
-| **LMDB cache** | `ddac_cache_init`, `ddac_cache_free`, `ddac_cache_lookup`, `ddac_cache_store`, `ddac_cache_count`, `ddac_cache_sync` |
-| **Dragonfly** | `ddac_dragonfly_connect`, `ddac_dragonfly_close`, `ddac_dragonfly_lookup`, `ddac_dragonfly_store`, `ddac_dragonfly_count` |
-| **I/O prefetcher** | `ddac_prefetch_init`, `ddac_prefetch_hint`, `ddac_prefetch_done`, `ddac_prefetch_free`, `ddac_prefetch_inflight` |
-| **ML inference** | `ddac_ml_init`, `ddac_ml_free`, `ddac_ml_available`, `ddac_ml_provider`, `ddac_ml_provider_name`, `ddac_ml_set_model_dir`, `ddac_ml_run_stage`, `ddac_ml_stats`, `ddac_ml_result_size`, `ddac_ml_stage_count`, `ddac_ml_model_name` |
-| **GPU OCR** | `ddac_gpu_ocr_init`, `ddac_gpu_ocr_free`, `ddac_gpu_ocr_backend`, `ddac_gpu_ocr_submit`, `ddac_gpu_ocr_flush`, `ddac_gpu_ocr_results_ready`, `ddac_gpu_ocr_collect`, `ddac_gpu_ocr_stats`, `ddac_gpu_ocr_max_batch`, `ddac_gpu_ocr_result_size` |
-| **Hardware crypto** | `ddac_crypto_detect`, `ddac_crypto_sha256_tier`, `ddac_crypto_sha256_name`, `ddac_crypto_batch_sha256`, `ddac_crypto_caps_size` |
-| **Conduit** | `ddac_conduit_process`, `ddac_conduit_batch`, `ddac_conduit_result_size` |
+[width="100%",cols="48%,52%",options="header",]
+|===
+|Category |Functions
+|*Core lifecycle* |`+ddac_init+`, `+ddac_free+`, `+ddac_parse+`,
+`+ddac_version+`
 
-## Usage from Chapel
+|*Handle setters* |`+ddac_set_ml_handle+`, `+ddac_set_gpu_ocr_handle+`
 
-```chapel
+|*LMDB cache* |`+ddac_cache_init+`, `+ddac_cache_free+`,
+`+ddac_cache_lookup+`, `+ddac_cache_store+`, `+ddac_cache_count+`,
+`+ddac_cache_sync+`
+
+|*Dragonfly* |`+ddac_dragonfly_connect+`, `+ddac_dragonfly_close+`,
+`+ddac_dragonfly_lookup+`, `+ddac_dragonfly_store+`,
+`+ddac_dragonfly_count+`
+
+|*I/O prefetcher* |`+ddac_prefetch_init+`, `+ddac_prefetch_hint+`,
+`+ddac_prefetch_done+`, `+ddac_prefetch_free+`,
+`+ddac_prefetch_inflight+`
+
+|*ML inference* |`+ddac_ml_init+`, `+ddac_ml_free+`,
+`+ddac_ml_available+`, `+ddac_ml_provider+`, `+ddac_ml_provider_name+`,
+`+ddac_ml_set_model_dir+`, `+ddac_ml_run_stage+`, `+ddac_ml_stats+`,
+`+ddac_ml_result_size+`, `+ddac_ml_stage_count+`, `+ddac_ml_model_name+`
+
+|*GPU OCR* |`+ddac_gpu_ocr_init+`, `+ddac_gpu_ocr_free+`,
+`+ddac_gpu_ocr_backend+`, `+ddac_gpu_ocr_submit+`,
+`+ddac_gpu_ocr_flush+`, `+ddac_gpu_ocr_results_ready+`,
+`+ddac_gpu_ocr_collect+`, `+ddac_gpu_ocr_stats+`,
+`+ddac_gpu_ocr_max_batch+`, `+ddac_gpu_ocr_result_size+`
+
+|*Hardware crypto* |`+ddac_crypto_detect+`, `+ddac_crypto_sha256_tier+`,
+`+ddac_crypto_sha256_name+`, `+ddac_crypto_batch_sha256+`,
+`+ddac_crypto_caps_size+`
+
+|*Conduit* |`+ddac_conduit_process+`, `+ddac_conduit_batch+`,
+`+ddac_conduit_result_size+`
+|===
+
+=== Usage from Chapel
+
+[source,chapel]
+----
 extern proc ddac_init(): c_ptr(void);
 extern proc ddac_free(handle: c_ptr(void)): void;
 extern proc ddac_parse(handle: c_ptr(void), inputPath: c_ptrConst(c_char),
@@ -173,30 +229,32 @@ extern proc ddac_parse(handle: c_ptr(void), inputPath: c_ptrConst(c_char),
 var handle = ddac_init();
 defer ddac_free(handle);
 var result = ddac_parse(handle, path.c_str(), outPath.c_str(), "scheme".c_str());
-```
+----
 
-## Contributing
+=== Contributing
 
 When modifying the ABI/FFI:
 
-1. **Update Idris2 ABI first** (`src/Docudactyl/ABI/*.idr`)
-   - Add/modify type definitions with proofs
-   - Update struct layout proofs
-   - Add FFI declarations
-2. **Update Zig FFI** (`ffi/zig/src/`)
-   - Implement new functions matching C ABI
-   - Ensure `comptime` assertions match Idris2 proofs
-3. **Regenerate C header** (`just generate-abi-header`)
-4. **Add integration tests** (`ffi/zig/test/integration_test.zig`)
-5. **Update Chapel extern declarations** (`src/chapel/FFIBridge.chpl`)
+[arabic]
+. *Update Idris2 ABI first* (`+src/Docudactyl/ABI/*.idr+`)
+* Add/modify type definitions with proofs
+* Update struct layout proofs
+* Add FFI declarations
+. *Update Zig FFI* (`+ffi/zig/src/+`)
+* Implement new functions matching C ABI
+* Ensure `+comptime+` assertions match Idris2 proofs
+. *Regenerate C header* (`+just generate-abi-header+`)
+. *Add integration tests* (`+ffi/zig/test/integration_test.zig+`)
+. *Update Chapel extern declarations* (`+src/chapel/FFIBridge.chpl+`)
 
-## License
+=== License
 
 SPDX-License-Identifier: CC-BY-SA-4.0
 
-## See Also
+=== See Also
 
-- [Idris2 Documentation](https://idris2.readthedocs.io)
-- [Zig Documentation](https://ziglang.org/documentation/master/)
-- [Chapel Documentation](https://chapel-lang.org/docs/)
-- [Rhodium Standard Repositories](https://github.com/hyperpolymath/rhodium-standard-repositories)
+* https://idris2.readthedocs.io[Idris2 Documentation]
+* https://ziglang.org/documentation/master/[Zig Documentation]
+* https://chapel-lang.org/docs/[Chapel Documentation]
+* https://github.com/hyperpolymath/rhodium-standard-repositories[Rhodium
+Standard Repositories]
