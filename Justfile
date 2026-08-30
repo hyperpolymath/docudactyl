@@ -470,15 +470,14 @@ toolbox := env("DOCUDACTYL_TOOLBOX", "fedora-toolbox-43")
 # Build the Zig FFI shared/static libraries
 build-ffi:
     @echo "Building Zig FFI (poppler, tesseract, ffmpeg, libxml2, gdal, vips)..."
-    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && cd {{zig_ffi}} && zig build -Doptimize=ReleaseFast'
+    toolbox run -c {{toolbox}} bash -c 'cd {{zig_ffi}} && mise exec -- zig build -Doptimize=ReleaseFast'
 
 # Build Chapel HPC binary (depends on Zig FFI)
 build-chapel: build-ffi
     @echo "Building Chapel HPC engine..."
     @mkdir -p bin
-    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && \
-         ABSPATH=$$(cd {{zig_ffi}}/zig-out/lib && pwd) && \
-         chpl {{chapel_src}}/DocudactylHPC.chpl \
+    toolbox run -c {{toolbox}} bash -c 'ABSPATH=$$(cd {{zig_ffi}}/zig-out/lib && pwd) && \
+         mise exec -- chpl {{chapel_src}}/DocudactylHPC.chpl \
               {{chapel_src}}/Config.chpl \
               {{chapel_src}}/ContentType.chpl \
               {{chapel_src}}/FFIBridge.chpl \
@@ -580,13 +579,13 @@ upgrade-manifest input="manifest.txt" output="manifest.ndjson":
 # Run Zig FFI integration tests
 test-ffi:
     @echo "Running Zig FFI tests..."
-    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && cd {{zig_ffi}} && zig build test'
+    toolbox run -c {{toolbox}} bash -c 'cd {{zig_ffi}} && mise exec -- zig build test'
 
 # Check Chapel parse validity (metalayer + smoke; --main-module
 # disambiguates the two `proc main()` files)
 check-chapel:
     @echo "Checking Chapel syntax..."
-    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && chpl --parse-only --main-module DocudactylHPC {{chapel_src}}/DocudactylHPC.chpl {{chapel_src}}/*.chpl'
+    toolbox run -c {{toolbox}} bash -c 'mise exec -- chpl --parse-only --main-module DocudactylHPC {{chapel_src}}/DocudactylHPC.chpl {{chapel_src}}/*.chpl'
 
 # Decoupled FFI smoke (per docudactyl#29 / echidna#146 pattern).
 # Compiles just smoke.chpl + FFIBridge.chpl — does not pull in the
@@ -594,15 +593,14 @@ check-chapel:
 # metalayer breaks. Build oracle for the FFI ABI alone.
 check-smoke:
     @echo "Parse-checking FFI smoke..."
-    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && chpl --no-codegen {{chapel_src}}/smoke.chpl {{chapel_src}}/FFIBridge.chpl'
+    toolbox run -c {{toolbox}} bash -c 'mise exec -- chpl --no-codegen {{chapel_src}}/smoke.chpl {{chapel_src}}/FFIBridge.chpl'
 
 # Build the FFI smoke binary (links against Zig FFI library).
 build-smoke: build-ffi
     @echo "Building FFI smoke binary..."
     @mkdir -p bin
-    toolbox run -c {{toolbox}} bash -c 'export PATH="$$HOME/.asdf/shims:$$HOME/.asdf/bin:$$PATH" && \
-         ABSPATH=$$(cd {{zig_ffi}}/zig-out/lib && pwd) && \
-         chpl {{chapel_src}}/smoke.chpl \
+    toolbox run -c {{toolbox}} bash -c 'ABSPATH=$$(cd {{zig_ffi}}/zig-out/lib && pwd) && \
+         mise exec -- chpl {{chapel_src}}/smoke.chpl \
               {{chapel_src}}/FFIBridge.chpl \
               -o bin/docudactyl-smoke \
               -L{{zig_ffi}}/zig-out/lib -ldocudactyl_ffi \
@@ -644,8 +642,8 @@ deps-check:
     echo ""
     # Check build tools
     echo "--- Build tools ---"
-    ZIG_VER=$(toolbox run -c {{toolbox}} bash -c "export PATH=\$HOME/.asdf/shims:\$HOME/.asdf/bin:\$PATH && zig version 2>/dev/null" || echo "")
-    CHPL_VER=$(toolbox run -c {{toolbox}} bash -c "chpl --version 2>/dev/null | head -1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+'" || echo "")
+    ZIG_VER=$(toolbox run -c {{toolbox}} bash -c "mise exec -- zig version 2>/dev/null" || echo "")
+    CHPL_VER=$(toolbox run -c {{toolbox}} bash -c "mise exec -- chpl --version 2>/dev/null | head -1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+'" || echo "")
     [ -n "$ZIG_VER" ]  && echo "  OK       zig $ZIG_VER (need >= 0.15.0)"  || { echo "  MISSING  zig (need >= 0.15.0)"; FAIL=1; }
     [ -n "$CHPL_VER" ] && echo "  OK       chpl $CHPL_VER (need >= 2.7.0)" || { echo "  MISSING  chpl (need >= 2.7.0)"; FAIL=1; }
     echo ""
