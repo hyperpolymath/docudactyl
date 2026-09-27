@@ -1,70 +1,45 @@
-# CLAUDE.md - AI Assistant Instructions
+# Docudactyl agent instructions
 
-## Language Policy (Hyperpolymath Standard)
+Read `0-AI-MANIFEST.a2ml` and `.machine_readable/6a2/AGENTIC.a2ml` first.
+Repository-specific constraints take precedence over generic scaffolding.
 
-### ALLOWED Languages & Tools
+## Sources and scope
 
-| Language/Tool | Use Case | Notes |
-|---------------|----------|-------|
-| **AffineScript** | Primary application code | Affine-typed, compiles to typed-wasm or ESM |
-| **Bun** | JS runtime & package management (tier 1) | Default for all new work. Runs compiled ESM/JS directly — no bundler step. Uses an npm-compatible `package.json` plus `bun.lock` — both are expected, not anti-patterns. |
-| **Rust** | Performance-critical, systems, WASM | Preferred for CLI tools |
-| **Tauri 2.0+** | Mobile apps (iOS/Android) | Rust backend + web UI |
-| **Dioxus** | Mobile apps (native UI) | Pure Rust, React-like |
-| **Gleam** | Backend services | Runs on BEAM or compiles to JS |
-| **Bash/POSIX Shell** | Scripts, automation | Keep minimal |
-| **JavaScript** | Only where AffineScript cannot | MCP protocol glue, Bun APIs |
-| **Nickel** | Configuration language | For complex configs |
-| **Guile Scheme** | State/meta files | .machine_readable/6a2/STATE.a2ml, .machine_readable/6a2/META.a2ml, .machine_readable/6a2/ECOSYSTEM.a2ml |
-| **Julia** | Batch scripts, data processing | Per RSR |
-| **OCaml** | AffineScript compiler | Language-specific |
-| **Ada** | Safety-critical systems | Where required |
+The estate standards source is `hyperpolymath/standards`; the operational
+scaffold is `hyperpolymath/rsr-template-repo`. Do not confuse a draft,
+historical checklist, or generated status report with ratified policy.
+The 2026-09-26 review and source revisions are recorded in
+`docs/compliance/2026-09-26-repository-audit.adoc`.
 
-### BANNED - Do Not Use
+## Actual implementation languages
 
-| Banned | Replacement |
-|--------|-------------|
-| TypeScript | AffineScript |
-| ReScript | AffineScript |
-| Deno | Bun |
-| Node.js | Bun |
-| npm | Bun |
-| pnpm/yarn | Bun |
-| Go | Rust |
-| Python | Julia/Rust/AffineScript |
-| Java/Kotlin | Rust/Tauri/Dioxus |
-| Swift | Tauri/Dioxus |
-| React Native | Tauri/Dioxus |
-| Flutter/Dart | Tauri/Dioxus |
+- Chapel: HPC orchestration and distributed processing.
+- Zig: native FFI and parser integrations.
+- Idris2: ABI types and proofs.
+- OCaml: offline Scheme transformation; Ada: standalone TUI.
+- Julia: existing legacy code, not the HPC hot path.
+- Bash: minimal CI/build automation. Guile Scheme/A2ML: existing metadata.
+- Agda: deferred distributed-invariant formalisation, not an existing proof.
 
-### Mobile Development
+Do not migrate these components into an unrelated preferred language.
+No new Python, Go, TypeScript, ReScript, Nix, or Deno code/configuration.
+If JavaScript tooling is needed, use plain JavaScript with Bun and a pinned
+manifest/lockfile; do not introduce AffineScript as an invented requirement.
+The current estate tooling order makes npm a last resort, not a blanket ban.
+Use Guix rather than Nix, and Podman/Containerfile rather than Docker.
 
-**No exceptions for Kotlin/Swift** - use Rust-first approach:
+## Required behaviour
 
-1. **Tauri 2.0+** - Web UI (AffineScript) + Rust backend, MIT/Apache-2.0
-2. **Dioxus** - Pure Rust native UI, MIT/Apache-2.0
-
-Both are FOSS with independent governance (no Big Tech).
-
-### Enforcement Rules
-
-1. **No new TypeScript files** - Convert existing TS to AffineScript
-2. **Use `package.json` + `bun.lock` for JS runtime deps** - Bun is npm-compatible; a manifest is REQUIRED
-3. **`bun install --production` for production deps** - resolved from `package.json`, pinned via `bun.lock`
-4. **No Go code** - Use Rust instead
-5. **No Python anywhere** - Use Julia for data/batch, Rust for systems, AffineScript for apps
-6. **No Kotlin/Swift for mobile** - Use Tauri 2.0+ or Dioxus
-
-### Package Management
-
-- **Primary**: Guix (guix.scm)
-- **Fallback**: Guix (flake.guix)
-- **JS deps**: Bun (`package.json` + `bun.lock`). Declare tooling as a devDependency and run `bunx --no-install --bun <tool>` — a bare `bunx <tool>` can fetch an unpinned package and may start Node via its shebang.
-
-### Security Requirements
-
-- No MD5/SHA1 for security (use SHA256+)
-- HTTPS only (no HTTP URLs)
-- No hardcoded secrets
-- SHA-pinned dependencies
-- SPDX license headers on all files
+1. Fix soundness/security holes before features or performance work.
+2. Run the actual tools. Missing prerequisites and skipped checks are not green.
+3. Never bypass a gate, invent evidence, or call a model of assumptions a proof
+   of this implementation. Read the audit before making production claims.
+4. Keep state under `.machine_readable/`; do not move canonical files blindly
+   when upstream directory layouts differ.
+5. Preserve existing licences. No automated relicensing, licence sweeps, or
+   changes to third-party notices. Escalate conflicting notices to the owner.
+6. Never commit secrets; pin remote dependencies and Actions; use HTTPS.
+7. Run the relevant checks in `CONTRIBUTING.adoc`, including regression tests
+   and `git diff --check`, and report exact scope and blockers.
+8. Use signed commits for estate submissions. Publishing and external service
+   operations require deliberate authorisation; local edits are not deployment.

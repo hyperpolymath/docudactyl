@@ -5,7 +5,7 @@
 // Minimal RESP2 client for Dragonfly (Redis-compatible) cross-locale cache.
 // Supports GET, SET (with TTL), and DEL operations on binary keys and values.
 //
-// Cache key format:  "ddac:{sha256_hex}" (65 bytes)
+// Cache key format:  "ddac:{sha256_hex}" (69 bytes)
 // Cache value format: raw bytes of ddac_parse_result_t (952 bytes)
 //
 // Dragonfly advantages over Redis:
@@ -33,6 +33,7 @@ const RESP_NULL_BULK = "$-1\r\n";
 pub const DragonflyClient = struct {
     stream: std.net.Stream,
     recv_buf: [4096]u8,
+    healthy: bool = true,
 
     /// Connect to a Dragonfly/Redis server.
     /// Returns null if connection fails.
@@ -40,15 +41,15 @@ pub const DragonflyClient = struct {
         const addr = std.net.Address.parseIp4(host, port) catch return null;
         const stream = std.net.tcpConnectToAddress(addr) catch return null;
 
-        // Set a reasonable timeout (5 seconds). Failure to set timeouts is
-        // non-fatal — operations will block indefinitely on network stalls,
-        // but the connection itself is still usable.
-        stream.handle.setReadTimeout(5_000_000_000) catch |err| {
-            std.log.debug("Dragonfly: failed to set read timeout: {s}", .{@errorName(err)});
-        };
-        stream.handle.setWriteTimeout(5_000_000_000) catch |err| {
-            std.log.debug("Dragonfly: failed to set write timeout: {s}", .{@errorName(err)});
-        };
+        // A cache must not block extraction indefinitely. Reject connections
+        // if either timeout cannot be installed (Stream.handle is a raw fd).
+        const timeout = std.posix.timeval{ .sec = 5, .usec = 0 };
+        for ([_]u32{ std.posix.SO.RCVTIMEO, std.posix.SO.SNDTIMEO }) |option| {
+            std.posix.setsockopt(stream.handle, std.posix.SOL.SOCKET, option, std.mem.asBytes(&timeout)) catch {
+                stream.close();
+                return null;
+            };
+        }
 
         return .{
             .stream = stream,
@@ -65,37 +66,66 @@ pub const DragonflyClient = struct {
     /// Returns the value bytes (pointing into recv_buf — valid until next call), or null.
     pub fn get(self: *DragonflyClient, key: []const u8) ?[]const u8 {
         // Send: *2\r\n$3\r\nGET\r\n${key.len}\r\n{key}\r\n
-        self.sendCommand(&[_][]const u8{ "GET", key }) catch return null;
-        return self.readBulkReply() catch null;
+        if (!self.healthy) return null;
+        self.sendCommand(&[_][]const u8{ "GET", key }) catch {
+            self.healthy = false;
+            return null;
+        };
+        return self.readBulkReply() catch {
+            self.healthy = false;
+            return null;
+        };
     }
 
     /// SET a binary key-value pair with optional TTL in seconds.
     /// Returns true on success.
     pub fn set(self: *DragonflyClient, key: []const u8, value: []const u8, ttl_secs: u32) bool {
+        if (!self.healthy) return false;
         if (ttl_secs > 0) {
             var ttl_buf: [16]u8 = undefined;
-            const ttl_str = std.fmt.bufPrint(&ttl_buf, "{d}", .{ttl_secs}) catch return false;
-            self.sendCommand(&[_][]const u8{ "SET", key, value, "EX", ttl_str }) catch return false;
+            const ttl_str = std.fmt.bufPrint(&ttl_buf, "{d}", .{ttl_secs}) catch {
+                self.healthy = false;
+                return false;
+            };
+            self.sendCommand(&[_][]const u8{ "SET", key, value, "EX", ttl_str }) catch {
+                self.healthy = false;
+                return false;
+            };
         } else {
-            self.sendCommand(&[_][]const u8{ "SET", key, value }) catch return false;
+            self.sendCommand(&[_][]const u8{ "SET", key, value }) catch {
+                self.healthy = false;
+                return false;
+            };
         }
         return self.readSimpleReply() catch false;
     }
 
     /// DEL a key. Returns true if the key was deleted.
     pub fn del(self: *DragonflyClient, key: []const u8) bool {
-        self.sendCommand(&[_][]const u8{ "DEL", key }) catch return false;
-        const n = self.readIntegerReply() catch return false;
+        if (!self.healthy) return false;
+        self.sendCommand(&[_][]const u8{ "DEL", key }) catch {
+            self.healthy = false;
+            return false;
+        };
+        const n = self.readIntegerReply() catch {
+            self.healthy = false;
+            return false;
+        };
         return n > 0;
     }
 
     /// PING — returns true if server responds with PONG.
     pub fn ping(self: *DragonflyClient) bool {
-        self.sendCommand(&[_][]const u8{"PING"}) catch return false;
-        // Expect +PONG\r\n
-        const n = self.stream.read(&self.recv_buf) catch return false;
-        if (n >= 7 and std.mem.startsWith(u8, self.recv_buf[0..n], "+PONG\r\n")) return true;
-        return false;
+        if (!self.healthy) return false;
+        self.sendCommand(&[_][]const u8{"PING"}) catch {
+            self.healthy = false;
+            return false;
+        };
+        const line = self.readLine() catch {
+            self.healthy = false;
+            return false;
+        };
+        return std.mem.eql(u8, line, "+PONG");
     }
 
     // ── Internal: RESP2 encoding ──────────────────────────────────────
@@ -116,62 +146,58 @@ pub const DragonflyClient = struct {
         }
     }
 
+    // TCP preserves bytes, not RESP frame boundaries. Read exactly one frame
+    // without consuming any bytes from the next response. Bound every length
+    // before indexing or arithmetic so an untrusted cache cannot overflow.
+    fn readExact(self: *DragonflyClient, bytes: []u8) !void {
+        var offset: usize = 0;
+        while (offset < bytes.len) {
+            const n = try self.stream.read(bytes[offset..]);
+            if (n == 0) return error.ConnectionClosed;
+            offset += n;
+        }
+    }
+
+    fn readLine(self: *DragonflyClient) ![]const u8 {
+        var used: usize = 0;
+        while (used < self.recv_buf.len) {
+            try self.readExact(self.recv_buf[used .. used + 1]);
+            if (self.recv_buf[used] == '\r') {
+                var lf: [1]u8 = undefined;
+                try self.readExact(&lf);
+                if (lf[0] != '\n') return error.InvalidReply;
+                return self.recv_buf[0..used];
+            }
+            if (self.recv_buf[used] == '\n') return error.InvalidReply;
+            used += 1;
+        }
+        return error.ReplyTooLarge;
+    }
+
     fn readBulkReply(self: *DragonflyClient) !?[]const u8 {
-        // Read response into recv_buf
-        const n = try self.stream.read(&self.recv_buf);
-        if (n == 0) return error.ConnectionClosed;
-
-        const resp = self.recv_buf[0..n];
-
-        // Null bulk string: $-1\r\n
-        if (n >= 5 and resp[0] == '$' and resp[1] == '-' and resp[2] == '1') return null;
-
-        // Bulk string: ${len}\r\n{data}\r\n
-        if (resp[0] != '$') return null;
-
-        // Parse length
-        var i: usize = 1;
-        var len: usize = 0;
-        while (i < n and resp[i] != '\r') : (i += 1) {
-            if (resp[i] < '0' or resp[i] > '9') return null;
-            len = len * 10 + (resp[i] - '0');
+        const line = try self.readLine();
+        if (std.mem.eql(u8, line, "$-1")) return null;
+        if (line.len < 2 or line[0] != '$') return error.InvalidReply;
+        for (line[1..]) |ch| {
+            if (ch < '0' or ch > '9') return error.InvalidReply;
         }
-        i += 2; // skip \r\n
-
-        // Data may span multiple reads for large values
-        if (i + len <= n) {
-            return resp[i .. i + len];
-        }
-
-        // Need more data — for our use case (952 bytes), this shouldn't happen
-        // with a 4KB buffer, but handle gracefully
-        return null;
+        const len = std.fmt.parseInt(usize, line[1..], 10) catch return error.InvalidReply;
+        if (len > self.recv_buf.len) return error.ReplyTooLarge;
+        try self.readExact(self.recv_buf[0..len]);
+        var terminator: [2]u8 = undefined;
+        try self.readExact(&terminator);
+        if (!std.mem.eql(u8, &terminator, "\r\n")) return error.InvalidReply;
+        return self.recv_buf[0..len];
     }
 
     fn readSimpleReply(self: *DragonflyClient) !bool {
-        const n = try self.stream.read(&self.recv_buf);
-        if (n == 0) return error.ConnectionClosed;
-        // +OK\r\n
-        return n >= 5 and self.recv_buf[0] == RESP_SIMPLE_STRING;
+        return std.mem.eql(u8, try self.readLine(), "+OK");
     }
 
     fn readIntegerReply(self: *DragonflyClient) !i64 {
-        const n = try self.stream.read(&self.recv_buf);
-        if (n == 0) return error.ConnectionClosed;
-        if (self.recv_buf[0] != RESP_INTEGER) return 0;
-
-        var i: usize = 1;
-        var negative = false;
-        if (i < n and self.recv_buf[i] == '-') {
-            negative = true;
-            i += 1;
-        }
-        var val: i64 = 0;
-        while (i < n and self.recv_buf[i] != '\r') : (i += 1) {
-            if (self.recv_buf[i] < '0' or self.recv_buf[i] > '9') break;
-            val = val * 10 + @as(i64, self.recv_buf[i] - '0');
-        }
-        return if (negative) -val else val;
+        const line = try self.readLine();
+        if (line.len < 2 or line[0] != ':') return error.InvalidReply;
+        return std.fmt.parseInt(i64, line[1..], 10) catch error.InvalidReply;
     }
 };
 
@@ -202,10 +228,13 @@ export fn ddac_dragonfly_connect(host_port: [*:0]const u8) ?*anyopaque {
         break :blk std.fmt.parseInt(u16, port_str, 10) catch 6379;
     } else 6379;
 
-    const client = DragonflyClient.connect(host, port) orelse return null;
+    var client = DragonflyClient.connect(host, port) orelse return null;
 
     // Verify connection
-    var handle = std.heap.c_allocator.create(DfHandle) catch return null;
+    const handle = std.heap.c_allocator.create(DfHandle) catch {
+        client.close();
+        return null;
+    };
     handle.client = client;
 
     if (!handle.client.ping()) {
@@ -290,4 +319,61 @@ export fn ddac_dragonfly_count(handle: *anyopaque) u64 {
     df.client.sendCommand(&[_][]const u8{"DBSIZE"}) catch return 0;
     const n = df.client.readIntegerReply() catch return 0;
     return if (n >= 0) @intCast(n) else 0;
+}
+
+// Pipes deliberately model only the byte stream used by the reply decoder.
+// Coalesced frames must remain separate and malformed/oversized frames fail.
+fn testReply(bytes: []const u8) !DragonflyClient {
+    const fds = try std.posix.pipe();
+    errdefer std.posix.close(fds[0]);
+    const writer = std.fs.File{ .handle = fds[1] };
+    defer writer.close();
+    try writer.writeAll(bytes);
+    return .{ .stream = .{ .handle = fds[0] }, .recv_buf = undefined };
+}
+
+test "RESP bulk consumes exactly one frame including binary payload" {
+    var client = try testReply("$3\r\na\x00b\r\n$0\r\n\r\n$-1\r\n:12\r\n+OK\r\n");
+    defer client.close();
+    try std.testing.expectEqualStrings("a\x00b", (try client.readBulkReply()).?);
+    try std.testing.expectEqualStrings("", (try client.readBulkReply()).?);
+    try std.testing.expect((try client.readBulkReply()) == null);
+    try std.testing.expectEqual(@as(i64, 12), try client.readIntegerReply());
+    try std.testing.expect(try client.readSimpleReply());
+}
+
+test "RESP rejects invalid lengths and terminators" {
+    const cases = [_][]const u8{ "$-2\r\n", "$999999999999999999999999999999\r\n", "$1\r\naXX", "$1\nx" };
+    for (cases) |bytes| {
+        var client = try testReply(bytes);
+        defer client.close();
+        try std.testing.expectError(error.InvalidReply, client.readBulkReply());
+    }
+    var oversized = try testReply("$4097\r\n");
+    defer oversized.close();
+    try std.testing.expectError(error.ReplyTooLarge, oversized.readBulkReply());
+    var truncated = try testReply("$3\r\na");
+    defer truncated.close();
+    try std.testing.expectError(error.ConnectionClosed, truncated.readBulkReply());
+}
+
+fn writeFragmentedReply(fd: std.posix.fd_t) void {
+    const writer = std.fs.File{ .handle = fd };
+    defer writer.close();
+    // Feed the header, payload bytes and trailer independently.
+    writer.writeAll("$4096\r\n") catch return;
+    for (0..4096) |_| writer.writeAll("x") catch return;
+    writer.writeAll("\r\n:1\r\n") catch return;
+}
+
+test "RESP handles payload arriving over multiple writes" {
+    const fds = try std.posix.pipe();
+    var client = DragonflyClient{ .stream = .{ .handle = fds[0] }, .recv_buf = undefined };
+    defer client.close();
+    const thread = try std.Thread.spawn(.{}, writeFragmentedReply, .{fds[1]});
+    defer thread.join();
+    const payload = (try client.readBulkReply()).?;
+    try std.testing.expectEqual(@as(usize, 4096), payload.len);
+    for (payload) |ch| try std.testing.expectEqual(@as(u8, 'x'), ch);
+    try std.testing.expectEqual(@as(i64, 1), try client.readIntegerReply());
 }

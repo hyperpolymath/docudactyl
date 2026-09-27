@@ -6,17 +6,23 @@ on:
   pull_request:
     paths:
       - '.github/workflows/**'
+      - 'scripts/ci/**'
   push:
     paths:
       - '.github/workflows/**'
+      - 'scripts/ci/**'
 
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   lint-workflows:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+
+      - name: Test CI harnesses
+        run: bash scripts/ci/test-ci.sh
 
       - name: Check SPDX headers
         run: |
@@ -43,12 +49,4 @@ jobs:
           exit $errors
 
       - name: Check pinned actions
-        run: |
-          errors=0
-          for f in .github/workflows/*.yml .github/workflows/*.yaml; do
-            [ -f "$f" ] || continue
-            # Look for uses: without SHA
-            if grep -E "uses:.*@v[0-9]" "$f" | grep -v "#"; then
-              echo "WARNING: $f has unpinned actions (missing SHA comment)"
-            fi
-          done
+        run: bash scripts/ci/check-workflow-pins.sh

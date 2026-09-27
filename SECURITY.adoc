@@ -35,7 +35,7 @@ a Vulnerability]
 
 This method ensures:
 
-* End-to-end encryption of your report
+* A private advisory workspace hosted by GitHub (not end-to-end encrypted)
 * Private discussion space for collaboration
 * Coordinated disclosure tooling
 * Automatic credit when the advisory is published

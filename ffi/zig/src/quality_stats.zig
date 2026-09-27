@@ -379,7 +379,7 @@ pub fn computeTimingPercentiles(stats: *const QualityStats, stage_idx: usize) Ti
     const count = stats.stage_timing_counts[stage_idx];
     if (count == 0) return result;
 
-    const n = @min(@as(usize, count), MAX_TIMING_SAMPLES);
+    const n: usize = @min(@as(usize, count), MAX_TIMING_SAMPLES);
     const base = stage_idx * MAX_TIMING_SAMPLES;
 
     // Copy samples to sort
@@ -398,9 +398,9 @@ pub fn computeTimingPercentiles(stats: *const QualityStats, stage_idx: usize) Ti
     result.mean_us = sum / @as(f64, @floatFromInt(n));
 
     // Percentiles via nearest-rank method
-    result.p50_us = samples[@min(n * 50 / 100, n - 1)];
-    result.p95_us = samples[@min(n * 95 / 100, n - 1)];
-    result.p99_us = samples[@min(n * 99 / 100, n - 1)];
+    result.p50_us = samples[(n * 50 + 99) / 100 - 1];
+    result.p95_us = samples[(n * 95 + 99) / 100 - 1];
+    result.p99_us = samples[(n * 99 + 99) / 100 - 1];
 
     return result;
 }
@@ -701,4 +701,20 @@ test "empty stats produces valid JSON" {
     const json = buf[0..len];
     try std.testing.expect(json[0] == '{');
     try std.testing.expect(json[len - 1] == '}');
+}
+
+test "nearest-rank percentiles at zero one and maximum sample capacity" {
+    var stats: QualityStats = undefined;
+    qualityStatsInit(&stats);
+    try std.testing.expectEqual(@as(f64, 0), computeTimingPercentiles(&stats, 0).p99_us);
+    recordTiming(&stats, 0, 42);
+    const one = computeTimingPercentiles(&stats, 0);
+    try std.testing.expectEqual(@as(f64, 42), one.p50_us);
+    try std.testing.expectEqual(@as(f64, 42), one.p99_us);
+    qualityStatsInit(&stats);
+    for (1..MAX_TIMING_SAMPLES + 1) |i| recordTiming(&stats, 0, @floatFromInt(i));
+    const full = computeTimingPercentiles(&stats, 0);
+    try std.testing.expectEqual(@as(f64, 512), full.p50_us);
+    try std.testing.expectEqual(@as(f64, 973), full.p95_us);
+    try std.testing.expectEqual(@as(f64, 1014), full.p99_us);
 }

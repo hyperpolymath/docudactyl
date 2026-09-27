@@ -101,6 +101,7 @@ const GpuOcrState = struct {
 
     fn init(allocator: std.mem.Allocator) !*GpuOcrState {
         const state = try allocator.create(GpuOcrState);
+        errdefer allocator.destroy(state);
         state.* = .{
             .allocator = allocator,
             .backend = detectBackend(),
@@ -159,7 +160,7 @@ fn detectBackend() GpuBackend {
 fn probeCudaDevices() bool {
     // Try to dlopen libcudart and query device count
     // This avoids a hard link-time dependency on CUDA
-    const lib = std.DynLib.open("libcudart.so") catch
+    var lib = std.DynLib.open("libcudart.so") catch
         std.DynLib.open("libcudart.so.12") catch
         std.DynLib.open("libcudart.so.11") catch
         return false;
@@ -175,7 +176,7 @@ fn probeCudaDevices() bool {
 
 /// Check if PaddleOCR inference library is available.
 fn probePaddleOcr() bool {
-    const lib = std.DynLib.open("libpaddle_inference.so") catch
+    var lib = std.DynLib.open("libpaddle_inference.so") catch
         std.DynLib.open("libpaddle_inference_c.so") catch
         return false;
     defer lib.close();
@@ -190,7 +191,7 @@ fn probeTesseractCuda() bool {
     // Tesseract CUDA is detected by checking if the LSTM engine
     // initialises with OEM_LSTM_ONLY mode on a GPU-enabled build.
     // For now, check the shared library for CUDA-specific symbols.
-    const lib = std.DynLib.open("libtesseract.so") catch
+    var lib = std.DynLib.open("libtesseract.so") catch
         std.DynLib.open("libtesseract.so.5") catch
         return false;
     defer lib.close();
@@ -207,11 +208,11 @@ fn probeTesseractCuda() bool {
 /// Initialise a Tesseract instance for CPU OCR fallback.
 /// Uses the C API directly via dlsym to avoid link-time dependency.
 fn initTesseract() ?*anyopaque {
-    const lib = std.DynLib.open("libtesseract.so") catch
+    var lib = std.DynLib.open("libtesseract.so") catch
         std.DynLib.open("libtesseract.so.5") catch
         return null;
-    // Keep lib open (leaked intentionally — needed for lifetime of program)
-    _ = lib;
+    // This probe does not retain any symbols or create a handle yet.
+    defer lib.close();
 
     // Use the existing Tesseract init from docudactyl_ffi.zig
     // The GPU coprocessor shares the same Tesseract API
@@ -353,7 +354,7 @@ export fn ddac_gpu_ocr_backend(handle: ?*anyopaque) u8 {
 /// Submit an image for GPU OCR processing.
 /// Images are queued until the batch is full or ddac_gpu_ocr_flush() is called.
 /// Returns: slot ID (0..MAX_BATCH_SIZE-1) on success, -1 if queue full.
-export fn ddac_gpu_ocr_submit(
+pub export fn ddac_gpu_ocr_submit(
     handle: ?*anyopaque,
     image_path: [*:0]const u8,
     output_path: [*:0]const u8,

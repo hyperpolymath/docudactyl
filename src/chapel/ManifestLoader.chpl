@@ -82,7 +82,7 @@ module ManifestLoader {
     writeln("[manifest] ", lineCount, " entries found in ", manifestPath);
 
     // ── Pass 2: read into block-distributed array ───────────────────
-    const entryDom = {0..#lineCount} dmapped new blockDist({0..#lineCount});
+    const entryDom = blockDist.createDomain({0..#lineCount});
     var docEntries: [entryDom] DocEntry;
 
     var actualCount = 0;
@@ -111,7 +111,7 @@ module ManifestLoader {
       writeln("[manifest] Note: ", lineCount - actualCount,
               " fewer entries read in pass 2 (", actualCount, " vs ", lineCount,
               "); using ", actualCount, " entries");
-      const fixedDom = {0..#actualCount} dmapped new blockDist({0..#actualCount});
+      const fixedDom = blockDist.createDomain({0..#actualCount});
       var fixedEntries: [fixedDom] DocEntry;
       forall i in fixedDom do fixedEntries[i] = docEntries[i];
       validateEntrySample(fixedEntries, actualCount);
@@ -192,7 +192,7 @@ module ManifestLoader {
     }
 
     // ── Distribute from locale 0 to all locales ─────────────────────
-    const entryDom = {0..#lineCount} dmapped new blockDist({0..#lineCount});
+    const entryDom = blockDist.createDomain({0..#lineCount});
     var docEntries: [entryDom] DocEntry;
 
     forall i in entryDom do docEntries[i] = localEntries[i];
@@ -210,6 +210,10 @@ module ManifestLoader {
 
   /** Sample 0.1% of entries for path existence (sanity check on locale 0). */
   proc validateEntrySample(const ref entries, count: int) throws {
+    // A manifest may become empty between counting and reading. Do not sample
+    // the invalid range 0..-1 or index an empty distributed array.
+    if count <= 0 then
+      throw new Error("Manifest has no entries after loading");
     const sampleSize = max(1, count / 1000);
     var rng = new randomStream(int);
     var existCount = 0;

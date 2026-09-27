@@ -235,8 +235,8 @@ fn extractSpeakerLabel(line: []const u8) ?struct { label: []const u8, content_st
 
     // "MR./MS./MRS./DR./JUDGE LASTNAME:" pattern
     const title_prefixes = [_][]const u8{
-        "MR. ",  "MS. ",   "MRS. ", "DR. ",
-        "Mr. ",  "Ms. ",   "Mrs. ", "Dr. ",
+        "MR. ",   "MS. ",   "MRS. ", "DR. ",
+        "Mr. ",   "Ms. ",   "Mrs. ", "Dr. ",
         "JUDGE ", "Judge ",
     };
     for (title_prefixes) |prefix| {
@@ -259,8 +259,7 @@ fn extractSpeakerLabel(line: []const u8) ?struct { label: []const u8, content_st
         var has_alpha = false;
         while (end < trimmed.len and end < 50 and trimmed[end] != ':') : (end += 1) {
             const ch = trimmed[end];
-            if (isUpper(ch)) has_alpha = true
-            else if (ch != ' ' and ch != '.' and ch != '-') break;
+            if (isUpper(ch)) has_alpha = true else if (ch != ' ' and ch != '.' and ch != '-') break;
         }
         if (has_alpha and end >= 2 and end < trimmed.len and trimmed[end] == ':') {
             const label = trimmed[0..end];
@@ -506,7 +505,7 @@ test "word counting per speaker" {
         \\A: Good morning to you.
     ;
     _ = speakerIdProcess(text, &result);
-    try std.testing.expect(result.total_words >= 7); // "Hello world" + "Good morning to you"
+    try std.testing.expectEqual(@as(u32, 6), result.total_words); // 2 + 4 spoken words; labels excluded.
 }
 
 test "THE COURT label detection" {

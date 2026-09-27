@@ -109,6 +109,13 @@ against in Wave 1.
 
 === Parallel-dispatch invariants (informal — deferred to follow-up if formalised)
 
+IMPORTANT: The 2026-09-26 source review supersedes the guarantee language in
+this historical inventory. Per-locale slots do not prevent same-locale task
+races, timing fields are not deterministic integers, and checkpoints do not
+persist aggregate statistics. These are proof obligations, not established
+invariants. See link:../compliance/2026-09-26-repository-audit.adoc[the audit]
+and link:distributed-aggregation-obligations.adoc[the issue #32 proof plan].
+
 These document the invariants the docudactyl
 `+forall idx in dynamic(...)+` loop relies on. They are NOT proved here;
 they are recorded so a future Agda module has a target.

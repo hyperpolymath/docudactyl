@@ -62,8 +62,6 @@ fn detectCapabilities() CryptoCapabilities {
     switch (target.cpu.arch) {
         .x86_64 => {
             // Use CPUID to detect x86-64 features
-            const features = std.Target.x86.featureSet(target.cpu.features);
-            _ = features;
 
             // Runtime CPUID check (works on any x86-64 CPU)
             // CPUID leaf 7, ECX=0: EBX bit 29 = SHA, bit 5 = AVX2, bit 16 = AVX-512F
@@ -152,9 +150,11 @@ const MULTI_BUFFER_LANES: usize = 4;
 fn batchSha256(
     paths: [*]const [*:0]const u8,
     digests: [*][32]u8,
+    valid: [*]bool,
     count: u32,
 ) u32 {
     var success: u32 = 0;
+    @memset(valid[0..count], false);
 
     // Process in groups of MULTI_BUFFER_LANES for better cache utilisation
     var base: u32 = 0;
@@ -193,6 +193,7 @@ fn batchSha256(
                 if (n == 0) {
                     // File complete — finalise
                     digests[base + i] = hashers[i].finalResult();
+                    valid[base + i] = true;
                     success += 1;
                     active[i] = false;
                 } else {
@@ -255,6 +256,7 @@ export fn ddac_crypto_sha256_name() [*:0]const u8 {
 /// Batch SHA-256: compute digests for N files.
 /// paths: array of N null-terminated path pointers
 /// hex_out: array of N * 65-byte hex digest buffers
+/// Failed positions contain an empty C string (all 65 bytes zeroed).
 /// count: number of files
 /// Returns number of successfully hashed files.
 export fn ddac_crypto_batch_sha256(
@@ -266,11 +268,16 @@ export fn ddac_crypto_batch_sha256(
     if (count > 1024) return 0; // Safety limit
 
     var raw_digests: [1024][32]u8 = undefined;
-    const success = batchSha256(paths, &raw_digests, count);
+    var valid: [1024]bool = undefined;
+    const success = batchSha256(paths, &raw_digests, &valid, count);
 
     // Convert to hex
     for (0..count) |i| {
-        digestToHex(raw_digests[i], &hex_out[i]);
+        if (valid[i]) {
+            digestToHex(raw_digests[i], &hex_out[i]);
+        } else {
+            @memset(&hex_out[i], 0); // empty C string, never uninitialised stack bytes
+        }
     }
 
     return success;
@@ -279,4 +286,20 @@ export fn ddac_crypto_batch_sha256(
 /// Get sizeof(CryptoCapabilities) for Chapel allocation.
 export fn ddac_crypto_caps_size() usize {
     return @sizeOf(CryptoCapabilities);
+}
+
+test "batch hashing isolates failed files without exposing stack bytes" {
+    const paths = [_][*:0]const u8{ "/dev/null", "/nonexistent/docudactyl-missing-file", "/dev/null" };
+    var output: [3][65]u8 = undefined;
+    @memset(std.mem.asBytes(&output), 0xaa);
+    try std.testing.expectEqual(@as(u32, 2), ddac_crypto_batch_sha256(&paths, &output, paths.len));
+    const empty_sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    try std.testing.expectEqualStrings(empty_sha, std.mem.sliceTo(&output[0], 0));
+    try std.testing.expectEqualStrings(empty_sha, std.mem.sliceTo(&output[2], 0));
+    try std.testing.expectEqual([_]u8{0} ** 65, output[1]);
+}
+
+test "runtime crypto detection returns a supported tier" {
+    const caps = detectCapabilities();
+    try std.testing.expect(caps.sha256_tier <= 2);
 }

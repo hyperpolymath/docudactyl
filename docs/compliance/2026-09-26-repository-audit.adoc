@@ -1,0 +1,176 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Docudactyl maintenance and standards audit — 2026-09-26
+:toc:
+
+== Scope and authority
+
+Reviewed the four open GitHub issues (#32–#35), HPC source/CI, local agent
+constraints, toolchain configuration and immediate correctness hazards.
+This is a bounded maintenance review, not a complete security audit or an
+RSR certification. No GitHub issues have been closed, no release published,
+and no licence text or identifier changed.
+
+Sources consulted:
+
+* `hyperpolymath/rsr-template-repo` at
+  `05bf1b97dd647e02e2a66a33e511a8922ca60e61`: agent doctrine and contribution guide.
+* `hyperpolymath/standards` at
+  `2479cf769ed5f0481ccf64860a2ab954514c2b59`: machine entry point, agent
+  instructions, constitutional status and RSR checklist.
+* Local `0-AI-MANIFEST.a2ml` and `.machine_readable/6a2/AGENTIC.a2ml`.
+
+Applied the template's fixes-first, no-silent-green, pinned-dependency and
+honest-evidence principles. The standards constitutional district is marked
+draft; the historical RSR checklist includes Nix and root-state conventions
+that conflict with current local constraints. Neither was copied wholesale.
+The repository's canonical metadata stays in `.machine_readable/6a2/`.
+Licensing conflicts are escalated, not resolved by automated editing.
+
+== Open issue disposition
+
+[cols="1,3,2",options="header"]
+|===
+|Issue |Changes / treatment |Remaining acceptance gate
+|#35 — Zig 0.15.2
+|Mutable DynLib receivers without const-casts; public GPU submit export;
+removed an unused obsolete target-feature conversion; POSIX socket timeouts;
+fixed io_uring flags, error-union handling and FADVISE SQE construction.
+|Standalone modules compile and tests pass on 0.15.2. Full linked FFI build
+and integration suite remain blocked locally by missing native libraries.
+Do not close on standalone evidence alone.
+|#34 — strict Idris2 CI
+|Removed `continue-on-error`; cache keyed by OS/architecture and the pinned
+0.8.0 source commit; explicit non-root install prefix, verified executable,
+and no hardcoded workspace path. Package/config/script edits trigger HPC CI.
+|Cold install and cache-hit proof builds must pass in CI. Retained a cached
+source bootstrap deliberately: the proposed setup action and prebuilt repo
+returned 404, and official v0.8.0 has no binary assets. This is a documented
+alternative to the issue's proposed binary installer, not a claim that pack
+provides a verified binary here.
+|#33 — Chapel warning cleanup
+|Renamed six unstable padding declarations without changing field types/order;
+replaced three `dmapped` domains with `blockDist.createDomain`. Added an empty
+post-load validation guard.
+|Chapel 2.8.0 compile/smoke run required. Retain and document DynamicIters,
+`string.c_str()` and cross-locale array warnings; do not globally suppress
+them or claim they disappeared. Reassess their safety with multi-locale tests.
+|#32 — deferred Agda formalisation
+|Added link:../decisions/distributed-aggregation-obligations.adoc[implementation-specific
+proof obligations] and corrected the historical ADR's unsupported guarantee
+language. No placeholder Agda proof or axiom-based "completion" added.
+|Deliberately open: ownership, cache semantics, persistence and refinement
+must be established before a load-bearing formalisation is possible.
+|===
+
+== Additional fixes
+
+* Chapel installation now downloads the actual Ubuntu 24.04 amd64 release
+  package, verifies its published SHA-256, and installs its dependencies.
+  The former `linux64-x86_64.tar.gz` asset does not exist in that release.
+* HPC smoke uses a generated WAV, exercises shared and broadcast loading,
+  and asserts exact success/failure counts from JSON. Removed the runner-icon
+  dependency, silent skip, and ineffective stdin-based success check.
+* Added a dependency-light standalone Zig gate and fail-closed CI harness tests.
+* Dragonfly replies are bounded and frame-aware across partial/coalesced TCP
+  reads. Invalid replies disable reuse after protocol errors. Socket timeout
+  installation failure rejects the connection; allocation failure closes it.
+  This does not establish thread safety or a connect-time deadline.
+* Failed batch hashes no longer hex-encode uninitialised stack bytes: failed
+  positions return an empty C string; successful positions retain their digest.
+* Zero-sized prefetch windows are clamped before modulo arithmetic; queue-full
+  prefetch falls back to fadvise.
+* Fixed quality percentile intermediate integer overflow and nearest-rank
+  indexing, with zero/one/full-buffer regression tests.
+* Corrected a speaker-count test to assert six spoken words (2 + 4); production
+  word counting was already correct. The assertion is now exact, not loosened.
+* GPU state allocation unwinds on text-buffer failure; the unimplemented
+  Tesseract probe no longer intentionally leaks a library handle.
+* Consolidated conflicting mise files into `mise.toml`, retaining the project
+  pins instead of unrelated `latest` runtimes and success-masking aliases.
+* Workflow pin checks now fail on mutable action refs even with trailing
+  comments; reduced the linter's token to `contents: read`.
+* Pinned the Pages generator checkout and disabled credential persistence for it.
+* BoJ dispatch is explicit opt-in, requires configured HTTPS/authentication,
+  constructs JSON with jq, times out, and propagates HTTP failures. This
+  changes the former automatically failing `.local` push integration; server
+  configuration remains a maintainer task.
+* Replaced generic contribution/agent scaffolding with repository-specific
+  instructions and corrected the security policy's end-to-end-encryption claim.
+
+== Validation evidence
+
+Environment: Debian 12 x86-64; Zig 0.15.2 obtained as a development tool outside
+the Git working tree. No downloaded tools, caches or datasets added to Git.
+
+[cols="2,3",options="header"]
+|===
+|Check |Result
+|`bash scripts/ci/test-zig-standalone.sh`
+|PASS: 66 tests across the explicit module set; modules without tests also
+compile. Includes CPU crypto detection, failed hash output, zero prefetch,
+RESP framing and percentile regressions. Also reran 25 tests in the changed
+Dragonfly, crypto, prefetch, quality-stats and speaker modules with
+`-O ReleaseFast`: PASS. GPU/ONNX execution is not tested.
+|`bash scripts/ci/test-ci.sh`
+|PASS: mutable refs rejected, fixed refs accepted, successful smoke reports
+accepted and zero-success reports rejected. Mock checks validate the harness,
+not the HPC binary.
+|`bash scripts/ci/check-workflow-pins.sh`
+|PASS for current workflow refs; this is a syntactic pin check, not an upstream
+supply-chain attestation.
+|C ABI header with `gcc -std=c11 -fsyntax-only`
+|PASS, including the checked-in header's static assertions. Does not prove
+agreement with a running Chapel or Idris2 implementation.
+|Workflow YAML parsing (YAML 1.2, duplicate keys rejected)
+|PASS for all 15 workflows. Actionlint binary download was blocked, so this
+is not equivalent to Actionlint semantic validation.
+|Bash syntax, modified Zig formatting, banned Idris proof-pattern scan,
+`git diff --check`
+|PASS.
+|Full FFI build / linked tests
+|BLOCKED: apt repository access failed over HTTP and HTTPS. Compilation now
+reports missing `lmdb.h` / Poppler headers; linked build reports missing
+native parser libraries. Further diagnostics may emerge once installed.
+|Chapel and Idris2 builds
+|NOT RUN: compilers/native prerequisites unavailable. Workflow changes must
+be exercised on Ubuntu 24.04 before issue closure or release.
+|Podman container, multi-locale stress, GPU/ONNX and external integrations
+|NOT RUN; not certified by this patch.
+|===
+
+== Immediate remaining risks and owner decisions
+
+. *Do not treat distributed execution as production-certified.* Shared
+  statistics, checkpoint sets, prefetch/GPU/ML handles and the Dragonfly
+  request stream need explicit task ownership/synchronisation. See the #32
+  plan for counterexamples to the earlier invariant claims.
+. *Resume is not aggregate-equivalent.* Indices alone do not restore previous
+  statistics, and topology changes can hide old checkpoint files. Checkpoint
+  writes truncate in place and errors are swallowed by callers.
+. *Cache hits need semantic and artifact coherence.* Keys omit stage/output
+  configuration and parser version; timings are not deterministic content;
+  cache lookup is not a substitute for recreating requested output files.
+. *Optional GPU/ONNX implementations contain placeholders.* Library discovery
+  is not evidence that an inference backend executes. Performance estimates
+  and backend availability must not be advertised as measured capability.
+. *Licensing needs owner review.* README mixes MPL and Palimpsest naming and
+  points to PMPL text while source headers/local manifest specify MPL-2.0.
+  Existing licence files/notices were left untouched in accordance with the
+  estate's no-automated-licence-edit rule.
+. *Container reproducibility remains unverified.* Builder/runtime images and
+  native packages are not fully locked; the Fedora-to-Wolfi dependency seam
+  needs an actual Podman build and runtime test, not guessed image digests.
+. *RSR metadata/deployment still needs review.* Do not fabricate completion
+  percentages, identity deeds, signing keys or externally served `.well-known`
+  policies. Older metadata, the licence discrepancy, and release claims
+  prevent an honest blanket compliance assertion.
+
+== Next verification sequence
+
+. Run `HPC Build & Test` on this branch with all native packages available.
+. Require strict FFI build/tests, Chapel boundary and end-to-end smoke, Idris2
+  cold/cache-hit builds, C header assertions and workflow checks.
+. Resolve any further diagnostics without skips or `continue-on-error`.
+. Review #33's remaining unstable APIs on the actual pinned compiler.
+. Keep #32 open and resolve the documented production blockers before
+  production-scale deployment; obtain an owner ruling on the licence conflict.
