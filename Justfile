@@ -1042,3 +1042,12 @@ crg-badge:
       D) color="orange" ;; E) color="red" ;; F) color="critical" ;; \
       *) color="lightgrey" ;; esac; \
     echo "[![CRG $$grade](https://img.shields.io/badge/CRG-$$grade-$$color?style=flat-square)](https://github.com/hyperpolymath/standards/tree/main/component-readiness-grades)"
+
+# Dependency-light Zig tests (still requires Zig 0.15.2 and libc)
+test-standalone:
+    bash scripts/ci/test-zig-standalone.sh
+
+# Check CI action pins and test fail-closed smoke/report handling
+check-ci:
+    bash scripts/ci/check-workflow-pins.sh
+    bash scripts/ci/test-ci.sh

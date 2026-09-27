@@ -8,7 +8,7 @@ image:https://img.shields.io/badge/License-PMPL_1.0-blue.svg[MPL-2.0,link="https
 // Badges
 image:https://img.shields.io/badge/RSR-Tier%201-gold[RSR Tier 1]
 image:https://img.shields.io/badge/Phase-v0.4.0-green[Phase]
-image:https://img.shields.io/badge/Chapel-2.3+-4E9A06?logo=data:image/svg+xml;base64,[Chapel]
+image:https://img.shields.io/badge/Chapel-2.8.0-4E9A06?logo=data:image/svg+xml;base64,[Chapel]
 image:https://img.shields.io/badge/Zig-0.15+-F7A41D?logo=zig[Zig]
 image:https://img.shields.io/badge/Idris2-0.8+-5E5086[Idris2]
 image:https://img.shields.io/badge/OCaml-4.14+-EC6813?logo=ocaml[OCaml]
@@ -19,6 +19,16 @@ image:https://img.shields.io/badge/Ada-2022-blue[Ada]
 This project is licensed under **MPL-2.0** (Palimpsest License).
 
 The full licence text is in `license/PMPL-1.0.txt`. The canonical source is the https://github.com/hyperpolymath/palimpsest-license[palimpsest-license] repository.
+
+== Verification status
+
+The HPC toolchain target is Zig 0.15.2, Chapel 2.8.0 and Idris2 0.8.0.
+See link:CONTRIBUTING.adoc[contribution and validation commands] and
+link:docs/compliance/2026-09-26-repository-audit.adoc[the current audit].
+Standalone tests do not certify distributed production readiness. In particular,
+checkpoint/reduction guarantees and optional GPU/ML backend execution remain
+unverified or incomplete; the throughput figures below are estimates, not
+measurements established by this audit.
 
 == Overview
 

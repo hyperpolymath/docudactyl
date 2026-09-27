@@ -27,6 +27,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
           repository: hyperpolymath/casket-ssg
+          ref: 45e72796456b91e0b800304ab0283cd4872c57c5
+          persist-credentials: false
           path: .casket-ssg
 
       - name: Setup GHCup

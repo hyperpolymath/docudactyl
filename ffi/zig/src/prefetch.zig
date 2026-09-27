@@ -52,7 +52,7 @@ export fn ddac_prefetch_init(window_size: u32) ?*anyopaque {
     state.* = .{
         .fds = [_]std.posix.fd_t{-1} ** MAX_INFLIGHT,
         .paths = [_]?[*:0]const u8{null} ** MAX_INFLIGHT,
-        .count = @min(window_size, MAX_INFLIGHT),
+        .count = @max(1, @min(window_size, MAX_INFLIGHT)),
         .head = 0,
         .use_uring = false,
         .ring = if (builtin.os.tag == .linux) null else {},
@@ -60,7 +60,7 @@ export fn ddac_prefetch_init(window_size: u32) ?*anyopaque {
 
     // Try to initialise io_uring (Linux 5.6+)
     if (builtin.os.tag == .linux) {
-        if (std.os.linux.IoUring.init(64, .{})) |ring| {
+        if (std.os.linux.IoUring.init(64, 0)) |ring| {
             state.ring = .{ .ring = ring };
             state.use_uring = true;
         } else |_| {
@@ -172,13 +172,14 @@ fn prefetchWithUring(state: *PrefetchState, fd: std.posix.fd_t) void {
     if (builtin.os.tag != .linux) return;
 
     if (state.ring) |*ring_state| {
-        // Submit a NOP operation as a readahead trigger
-        // (io_uring doesn't have a native readahead op, but opening + fadvise
-        // is triggered by the kernel when we submit a read)
-        //
-        // Use IORING_OP_FADVISE if available (kernel 5.6+)
-        var sqe = ring_state.ring.get_sqe() orelse return;
-        sqe.prep_fadvise(fd, 0, @intCast(READAHEAD_SIZE), 3); // POSIX_FADV_WILLNEED
+        // Zig 0.15 has no prep_fadvise helper. Initialise the complete SQE
+        // through prep_rw; Linux uses rw_flags as fadvise_advice for this op.
+        const sqe = ring_state.ring.get_sqe() catch {
+            prefetchWithFadvise(fd);
+            return;
+        };
+        sqe.prep_rw(.FADVISE, fd, 0, READAHEAD_SIZE, 0);
+        sqe.rw_flags = 3; // POSIX_FADV_WILLNEED
         sqe.user_data = @intCast(fd);
 
         // Submit without waiting — failure is non-fatal; the file will still
@@ -198,4 +199,14 @@ fn drainUring(state: *PrefetchState) void {
             _ = ring_state.ring.cq_advance(1);
         }
     }
+}
+
+test "zero prefetch window is clamped before modulo" {
+    const handle = ddac_prefetch_init(0) orelse return error.OutOfMemory;
+    defer ddac_prefetch_free(handle);
+    const state: *PrefetchState = @ptrCast(@alignCast(handle));
+    try std.testing.expectEqual(@as(usize, 1), state.count);
+    ddac_prefetch_hint(handle, "/dev/null");
+    try std.testing.expectEqual(@as(u32, 1), ddac_prefetch_inflight(handle));
+    ddac_prefetch_done(handle, "/dev/null");
 }

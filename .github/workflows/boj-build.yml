@@ -1,20 +1,30 @@
 # SPDX-License-Identifier: MPL-2.0
 name: BoJ Server Build Trigger
+# Opt-in: GitHub-hosted runners cannot resolve the old boj-server.local URL.
 on:
-  push:
-    branches: [main, master]
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   trigger-boj:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Trigger BoJ Server (Casket/ssg-mcp)
+      - name: Trigger configured BoJ server
+        env:
+          BOJ_SERVER_URL: ${{ vars.BOJ_SERVER_URL }}
+          BOJ_TOKEN: ${{ secrets.BOJ_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
         run: |
-          # Send a secure trigger to boj-server to build this repository
-          curl -X POST "http://boj-server.local:7700/cartridges/ssg-mcp/invoke"             -H "Content-Type: application/json"             -d "{\"repo\": \"${{ github.repository }}\", \"branch\": \"${{ github.ref_name }}\", \"engine\": \"casket\\"}"}
-        continue-on-error: true
-permissions:
-  actions: read
-  contents: read
+          set -euo pipefail
+          : "${BOJ_SERVER_URL:?Set BOJ_SERVER_URL to an HTTPS endpoint reachable by this runner}"
+          : "${BOJ_TOKEN:?Configure BOJ_TOKEN before dispatching}"
+          [[ "$BOJ_SERVER_URL" == https://* ]] || { echo 'HTTPS is required' >&2; exit 1; }
+          jq -n --arg repo "$REPO" --arg branch "$BRANCH" \
+            '{repo: $repo, branch: $branch, engine: "casket"}' > "$RUNNER_TEMP/boj-payload.json"
+          curl --fail-with-body --silent --show-error --proto '=https' \
+            --connect-timeout 10 --max-time 60 \
+            -H "Authorization: Bearer $BOJ_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/boj-payload.json" \
+            "${BOJ_SERVER_URL%/}/cartridges/ssg-mcp/invoke"

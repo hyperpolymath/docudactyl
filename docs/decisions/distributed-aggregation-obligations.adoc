@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Distributed aggregation: proof obligations for issue #32
+:toc:
+
+Status: deferred design and implementation work, NOT a mechanised proof.
+No claim of production-scale distributed correctness is made.
+
+The target module remains `proofs/agda/DistributedAggregationInvariants.agda`.
+Do not reuse echidna's speculative first-success proof: Docudactyl dispatches
+independent document indices and reduces results. Before writing theorems,
+state an operational model and demonstrate refinement from the actual Chapel
+and Zig implementations. A theorem over an assumed race-free abstract system
+would not establish race freedom of these sources.
+
+[cols="1,2,2",options="header"]
+|===
+|Obligation |Current implementation gap |Required evidence
+|At-most-once
+|`isAlreadyProcessed` and `recordCheckpoint` are separate operations on
+mutable sets. The scheduler's one-visit property is different from exactly-once
+side effects under retry or crash.
+|Concurrent duplicate-index tests, explicit ownership/locking, idempotent
+output commit semantics and crash-point tests.
+|Abort-bounded
+|`shouldAbort` is polled before processing; in-flight work may finish.
+Aborted/conduit-rejected documents are not fully represented by the report's
+`accumulate` counts.
+|Define a bound in terms of active tasks and retries, and report pending,
+skipped, failed and successful indices without double counting.
+|Aggregation commutativity
+|`perLocaleStats[here.id]` uses non-atomic updates in parallel tasks. Duration
+and parse-time fields are floating point, not commutative integer reductions.
+|Task-local reductions or locking; exact integer totals; a specified rounding
+or ordering policy for floating-point totals, with multi-locale stress tests.
+|L1 coherence
+|Path/mtime/size do not identify parser version, output format or stages.
+Multiple tasks may reference the same path. LMDB transaction guarantees alone
+do not prove application cache-key correctness.
+|Versioned keys including processing configuration; duplicate-path and
+same-metadata/content-change tests; explicit file immutability assumptions.
+|L2 coherence
+|Content SHA-256 alone does not describe parser configuration. Cached parse
+results include timing; a cache hit does not itself recreate output artifacts.
+The Dragonfly client is shared by parallel tasks without request serialization.
+|Separate deterministic semantic values from timing; versioned keys and output
+materialisation; task-owned clients or synchronized full request/reply pairs.
+|Checkpoint resumability
+|Only indices are persisted, not aggregate statistics or a manifest identity.
+The reader scans files for the current locale count, potentially missing old
+locale files after shrinking the topology. Writes truncate in place.
+|Atomic durable checkpoint commits; manifest/version binding; migration across
+locale counts; restored statistics; crash/restart equivalence tests.
+|Content-type determinism
+|Magic-byte classification can be deterministic for immutable bytes, but the
+file may change between validation, hashing, and parsing.
+|Define immutable-input/snapshot assumptions and bind detection, hash and parse
+to the same input version; test mutation and unsupported formats.
+|===
+
+Additional shared handles (prefetch, GPU and ML) require an ownership audit.
+The changes in this maintenance pass do not fix or certify those concurrency
+properties. Model locks/ownership and persistence failures before claiming
+these invariants as load-bearing. Keep issue #32 open until the implementation,
+refinement argument, regression suite and Agda gate have all been reviewed.

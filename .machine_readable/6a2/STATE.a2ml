@@ -5,10 +5,20 @@
 [metadata]
 project = "docudactyl"
 version = "0.1.0"
-last-updated = "2026-03-15"
+last-updated = "2026-09-26"
 status = "active"
 
 [project-context]
 name = "docudactyl"
 completion-percentage = 0
 phase = "In development"
+
+[maintenance-review]
+date = "2026-09-26"
+report = "docs/compliance/2026-09-26-repository-audit.adoc"
+standalone-zig-tests = 66
+standalone-zig-status = "passed on Zig 0.15.2"
+full-native-status = "blocked: parser headers/libraries and Chapel/Idris2 unavailable locally"
+issue-32 = "deferred; implementation gaps and proof obligations documented"
+issues-33-35 = "changes prepared; pinned-toolchain CI acceptance still required"
+production-readiness = "not certified: concurrency, resume and cache semantics need further work"

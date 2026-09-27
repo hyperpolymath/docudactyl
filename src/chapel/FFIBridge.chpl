@@ -182,7 +182,7 @@ module FFIBridge {
     var status: uint(8);              // 0=ok, 1-4=error codes
     var stage: uint(8);               // MlStage enum (0-4)
     var provider: uint(8);            // ExecProvider enum (0-3)
-    var _pad: c_array(uint(8), 5);    // alignment padding
+    var padA: c_array(uint(8), 5);    // alignment padding
     var inference_time_us: int(64);   // inference time (microseconds)
     var output_count: int(64);        // entities/tokens/labels
     var confidence: real(64);         // 0.0-1.0, -1.0 if N/A
@@ -248,9 +248,9 @@ module FFIBridge {
     var has_arm_sha2: uint(8);       // AArch64 SHA2
     var has_arm_sha512: uint(8);     // AArch64 SHA-512
     var has_aes_ni: uint(8);         // x86-64 AES-NI
-    var _pad: c_array(uint(8), 2);   // padding
+    var padA: c_array(uint(8), 2);   // padding
     var sha256_tier: uint(8);        // 0=dedicated, 1=AVX2, 2=software
-    var _pad2: c_array(uint(8), 7);  // padding
+    var padB: c_array(uint(8), 7);  // padding
   }
 
   /** Detect hardware crypto capabilities. */
@@ -281,7 +281,7 @@ module FFIBridge {
   extern record ddac_ocr_result_t {
     var status: uint(8);             // 0=success, 1=error, 2=skipped, 3=gpu_error
     var confidence: int(8);          // OCR confidence 0-100, -1 if unavailable
-    var _pad: c_array(uint(8), 6);   // alignment padding
+    var padA: c_array(uint(8), 6);   // alignment padding
     var char_count: int(64);         // characters extracted
     var word_count: int(64);         // words extracted
     var gpu_time_us: int(64);        // GPU processing time (microseconds)
@@ -345,10 +345,10 @@ module FFIBridge {
   extern record ddac_conduit_result_t {
     var content_kind: uint(8);       // ContentKind (0-6) from magic bytes
     var validation: uint(8);         // 0=ok, 1=not_found, 2=empty, 3=unreadable
-    var _pad: c_array(uint(8), 6);   // alignment padding
+    var padA: c_array(uint(8), 6);   // alignment padding
     var file_size: int(64);          // file size in bytes
     var sha256: c_array(c_char, 65); // hex SHA-256 + null
-    var _pad2: c_array(c_char, 7);   // alignment padding
+    var padB: c_array(c_char, 7);   // alignment padding
   }
 
   /** Pre-process a single file: detect content type via magic bytes,

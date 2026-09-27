@@ -9,6 +9,7 @@
 name: HPC Build & Test
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -17,6 +18,9 @@ on:
       - 'src/Docudactyl/**'
       - 'src/abi/**'
       - 'generated/abi/**'
+      - 'docudactyl.ipkg'
+      - 'mise.toml'
+      - 'scripts/ci/**'
       - '.github/workflows/hpc-ci.yml'
   pull_request:
     paths:
@@ -25,7 +29,14 @@ on:
       - 'src/Docudactyl/**'
       - 'src/abi/**'
       - 'generated/abi/**'
+      - 'docudactyl.ipkg'
+      - 'mise.toml'
+      - 'scripts/ci/**'
       - '.github/workflows/hpc-ci.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   actions: read
@@ -53,6 +64,9 @@ jobs:
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: ${{ env.ZIG_VERSION }}
+
+      - name: Standalone Zig regression tests
+        run: bash scripts/ci/test-zig-standalone.sh
 
       - name: Install C library headers
         run: |
@@ -107,13 +121,7 @@ jobs:
           path: ffi/zig/zig-out/lib/
 
       - name: Install Chapel
-        run: |
-          CHPL_TARBALL="chapel-${CHAPEL_VERSION}-linux64-x86_64.tar.gz"
-          CHPL_URL="https://github.com/chapel-lang/chapel/releases/download/${CHAPEL_VERSION}/${CHPL_TARBALL}"
-          wget -q "${CHPL_URL}" -O "/tmp/${CHPL_TARBALL}"
-          tar xzf "/tmp/${CHPL_TARBALL}" -C /opt/
-          echo "CHPL_HOME=/opt/chapel-${CHAPEL_VERSION}" >> "$GITHUB_ENV"
-          echo "/opt/chapel-${CHAPEL_VERSION}/bin/linux64-x86_64" >> "$GITHUB_PATH"
+        run: bash scripts/ci/install-chapel.sh
 
       - name: Install C runtime libraries (FFI .so transitively pulls these)
         run: |
@@ -124,7 +132,7 @@ jobs:
             libavformat60 libavcodec60 libavutil58 \
             libxml2 libgdal34t64 libvips42t64 \
             liblmdb0 libarchive13t64 libcurl4t64 \
-            tesseract-ocr-eng
+            tesseract-ocr-eng jq
 
       - name: Verify Chapel installation
         run: chpl --version
@@ -133,7 +141,6 @@ jobs:
         run: |
           mkdir -p bin
           ABSPATH=$(cd ffi/zig/zig-out/lib && pwd)
-          chmod +x ffi/zig/zig-out/lib/libdocudactyl_ffi.so* || true
           chpl src/chapel/smoke.chpl \
                src/chapel/FFIBridge.chpl \
                -o bin/docudactyl-smoke \
@@ -165,14 +172,7 @@ jobs:
           path: ffi/zig/zig-out/lib/
 
       - name: Install Chapel
-        run: |
-          CHPL_TARBALL="chapel-${CHAPEL_VERSION}-linux64-x86_64.tar.gz"
-          CHPL_URL="https://github.com/chapel-lang/chapel/releases/download/${CHAPEL_VERSION}/${CHPL_TARBALL}"
-          echo "Downloading Chapel ${CHAPEL_VERSION} from ${CHPL_URL}..."
-          wget -q "${CHPL_URL}" -O "/tmp/${CHPL_TARBALL}"
-          tar xzf "/tmp/${CHPL_TARBALL}" -C /opt/
-          echo "CHPL_HOME=/opt/chapel-${CHAPEL_VERSION}" >> "$GITHUB_ENV"
-          echo "/opt/chapel-${CHAPEL_VERSION}/bin/linux64-x86_64" >> "$GITHUB_PATH"
+        run: bash scripts/ci/install-chapel.sh
 
       - name: Install C runtime libraries
         run: |
@@ -183,7 +183,7 @@ jobs:
             libavformat60 libavcodec60 libavutil58 \
             libxml2 libgdal34t64 libvips42t64 \
             liblmdb0 libarchive13t64 libcurl4t64 \
-            tesseract-ocr-eng
+            tesseract-ocr-eng jq
 
       - name: Verify Chapel installation
         run: chpl --version
@@ -192,7 +192,6 @@ jobs:
         run: |
           mkdir -p bin
           ABSPATH=$(cd ffi/zig/zig-out/lib && pwd)
-          chmod +x ffi/zig/zig-out/lib/libdocudactyl_ffi.so* || true
           chpl src/chapel/DocudactylHPC.chpl \
                src/chapel/Config.chpl \
                src/chapel/ContentType.chpl \
@@ -209,32 +208,8 @@ jobs:
                --ldflags="-Wl,-rpath,$ABSPATH" \
                --fast
 
-      - name: Smoke test (5 files)
-        run: |
-          # Create a small manifest from available system files
-          TMPDIR=$(mktemp -d)
-          find /usr/share/icons -name '*.png' 2>/dev/null | head -5 > "$TMPDIR/manifest.txt"
-          COUNT=$(wc -l < "$TMPDIR/manifest.txt")
-          echo "Smoke test manifest: $COUNT files"
-
-          if [ "$COUNT" -lt 1 ]; then
-            echo "SKIP: No test files available"
-            exit 0
-          fi
-
-          export LD_LIBRARY_PATH="ffi/zig/zig-out/lib:$LD_LIBRARY_PATH"
-          bin/docudactyl-hpc \
-            --manifestPath="$TMPDIR/manifest.txt" \
-            --outputDir="$TMPDIR/output" \
-            --chunkSize=1
-
-          # Verify reports were generated
-          ls "$TMPDIR/output/run-report.scm" "$TMPDIR/output/run-report.json"
-
-          # Verify non-zero success count
-          SUCCEEDED=$(grep -oP 'Succeeded:\s+\K\d+' <<< "$(cat /dev/stdin)" || echo 0)
-          echo "Smoke test complete"
-          rm -rf "$TMPDIR"
+      - name: Smoke test (deterministic fixture, strict report assertions)
+        run: bash scripts/ci/smoke-hpc.sh
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Job 3: Idris2 ABI — Compile Proofs
@@ -242,32 +217,35 @@ jobs:
   check-abi:
     name: Idris2 ABI Proofs
     runs-on: ubuntu-24.04
-    continue-on-error: true  # Idris2 CI setup can be fragile
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
 
-      - name: Install Idris2
+      - name: Install Idris2 prerequisites
         run: |
-          # Install Idris2 via pack (the Idris2 package manager)
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            build-essential libgmp-dev chezscheme
+          sudo apt-get install -y --no-install-recommends build-essential libgmp-dev chezscheme
 
-          # Clone and build Idris2 from source
-          git clone --depth 1 --branch v${IDRIS2_VERSION} \
-            https://github.com/idris-lang/Idris2.git /tmp/idris2-src
-          cd /tmp/idris2-src
-          make bootstrap SCHEME=chezscheme
-          sudo make install
-          echo "$HOME/.idris2/bin" >> "$GITHUB_PATH"
+      - name: Cache pinned Idris2 installation
+        id: idris-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.local/idris2
+          key: idris2-${{ runner.os }}-${{ runner.arch }}-0.8.0-15a3e4e70843f7a34100f6470c04b791330788df-v1
+
+      - name: Install pinned Idris2
+        if: steps.idris-cache.outputs.cache-hit != 'true'
+        run: bash scripts/ci/install-idris2.sh
+
+      - name: Add Idris2 to PATH
+        run: echo "$HOME/.local/idris2/bin" >> "$GITHUB_PATH"
 
       - name: Verify Idris2 installation
         run: idris2 --version
 
       - name: Compile ABI proofs
         run: |
-          cd /home/runner/work/docudactyl/docudactyl
           idris2 --build docudactyl.ipkg
 
       - name: Verify no banned patterns

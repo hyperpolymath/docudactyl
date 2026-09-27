@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Contributing to Docudactyl
+
+Read `0-AI-MANIFEST.a2ml` and `.machine_readable/6a2/AGENTIC.a2ml` first.
+The hot path is Chapel plus Zig; Idris2 describes the ABI. OCaml and Ada
+are separate tools, and Julia is legacy code, not the HPC implementation.
+
+== Development and checks
+
+The canonical tool pins are in `mise.toml`. The HPC CI target is Linux
+x86-64, Zig 0.15.2, Chapel 2.8.0 and Idris2 0.8.0. Native development
+headers are listed in `.github/workflows/hpc-ci.yml`. Do not introduce
+an unrelated language toolchain to work around a failed gate.
+
+[source,shell]
+----
+# Fast checks: Zig + libc; Bash + jq
+just test-standalone
+just check-ci
+
+# Full FFI checks: all native parser development libraries required
+(cd ffi/zig && zig build -Doptimize=ReleaseFast && zig build test)
+
+# ABI type/proof checking: Idris2 required
+idris2 --build docudactyl.ipkg
+
+# Existing toolbox-based Chapel/FFI boundary checks
+just check-smoke
+just build-smoke
+just run-smoke
+
+git diff --check
+----
+
+The standalone suite is not a replacement for the linked FFI tests,
+Chapel binary, or ABI proofs. Missing tools, skipped tests and unavailable
+external services must be reported as blockers, not passes. See
+`docs/compliance/2026-09-26-repository-audit.adoc` for the current evidence
+and production limitations.
+
+== Change discipline
+
+* Fix correctness and security holes before adding features.
+* Add a regression test and rerun it after each fix.
+* Pin remote Actions to full commit hashes; a version comment is not a pin.
+* Do not bypass required checks with `continue-on-error`.
+* Preserve existing licences; conflicting notices require owner review.
+* Keep structured state under `.machine_readable/`, not the repository root.
+* Never commit secrets or build artifacts. Report security issues privately
+  using `SECURITY.adoc`.
+* Use signed commits when submitting a contribution to the estate.
+
+== Optional BoJ integration
+
+The BoJ workflow is manual-only. Before dispatch, configure the repository
+variable `BOJ_SERVER_URL` with an HTTPS endpoint reachable from the runner
+and the secret `BOJ_TOKEN` with a server-accepted bearer credential.
+Do not put credentials in source or issue comments. The old unauthenticated
+`.local` HTTP endpoint cannot be reached by GitHub-hosted runners.

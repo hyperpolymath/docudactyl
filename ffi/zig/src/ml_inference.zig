@@ -30,21 +30,21 @@ const std = @import("std");
 
 /// ML-dependent stages (must match DDAC_STAGE_* bitmask positions)
 const MlStage = enum(u8) {
-    ner = 0,               // STAGE_NER (bit 14)
-    whisper = 1,           // STAGE_WHISPER (bit 15)
-    image_classify = 2,    // STAGE_IMAGE_CLASSIFY (bit 16)
-    layout_analysis = 3,   // STAGE_LAYOUT_ANALYSIS (bit 17)
-    handwriting_ocr = 4,   // STAGE_HANDWRITING_OCR (bit 18)
+    ner = 0, // STAGE_NER (bit 14)
+    whisper = 1, // STAGE_WHISPER (bit 15)
+    image_classify = 2, // STAGE_IMAGE_CLASSIFY (bit 16)
+    layout_analysis = 3, // STAGE_LAYOUT_ANALYSIS (bit 17)
+    handwriting_ocr = 4, // STAGE_HANDWRITING_OCR (bit 18)
 };
 
 const ML_STAGE_COUNT: usize = 5;
 
 /// Execution provider preference
 const ExecProvider = enum(u8) {
-    tensorrt = 0,   // NVIDIA TensorRT (INT8/FP16)
-    cuda = 1,       // NVIDIA CUDA (FP32)
-    openvino = 2,   // Intel OpenVINO
-    cpu = 3,        // CPU (ONNX default)
+    tensorrt = 0, // NVIDIA TensorRT (INT8/FP16)
+    cuda = 1, // NVIDIA CUDA (FP32)
+    openvino = 2, // Intel OpenVINO
+    cpu = 3, // CPU (ONNX default)
 };
 
 // ============================================================================
@@ -113,17 +113,20 @@ fn probeOnnxRuntime() OrtApi {
 
     // Probe execution providers (best first)
     // TensorRT: check for libonnxruntime_providers_tensorrt
-    if (std.DynLib.open("libonnxruntime_providers_tensorrt.so")) |lib| {
+    if (std.DynLib.open("libonnxruntime_providers_tensorrt.so")) |loaded_lib| {
+        var lib = loaded_lib;
         lib.close();
         api.provider = .tensorrt;
     } else |_| {
         // CUDA: check for libonnxruntime_providers_cuda
-        if (std.DynLib.open("libonnxruntime_providers_cuda.so")) |lib| {
+        if (std.DynLib.open("libonnxruntime_providers_cuda.so")) |loaded_lib| {
+            var lib = loaded_lib;
             lib.close();
             api.provider = .cuda;
         } else |_| {
             // OpenVINO: check for libonnxruntime_providers_openvino
-            if (std.DynLib.open("libonnxruntime_providers_openvino.so")) |lib| {
+            if (std.DynLib.open("libonnxruntime_providers_openvino.so")) |loaded_lib| {
+                var lib = loaded_lib;
                 lib.close();
                 api.provider = .openvino;
             } else |_| {
