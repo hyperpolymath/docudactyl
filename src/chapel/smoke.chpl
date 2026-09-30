@@ -39,5 +39,24 @@ proc main() {
   writeln("[smoke] init ok");
   ddac_free(handle);
 
+  // Default initialization touches every declared field, including padding.
+  // Size checks alone do not catch Chapel fields with incorrect C names.
+  var ml: ddac_ml_result_t;
+  assert(c_sizeof(ddac_ml_result_t) == ddac_ml_result_size());
+  assert(ml.padA[0] == 0);
+
+  var crypto: ddac_crypto_caps_t;
+  assert(c_sizeof(ddac_crypto_caps_t) == ddac_crypto_caps_size());
+  assert(crypto.padA[0] == 0 && crypto.padB[0] == 0);
+
+  var ocr: ddac_ocr_result_t;
+  assert(c_sizeof(ddac_ocr_result_t) == ddac_gpu_ocr_result_size());
+  assert(ocr.padA[0] == 0);
+
+  var conduit: ddac_conduit_result_t;
+  assert(c_sizeof(ddac_conduit_result_t) == ddac_conduit_result_size());
+  assert(conduit.padA[0] == 0 && conduit.padB[0] == 0);
+  writeln("[smoke] extern record initialization and sizes ok");
+
   writeln("[smoke] PASS");
 }
