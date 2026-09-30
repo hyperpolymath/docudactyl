@@ -528,21 +528,19 @@ fn stageTocExtract(b: *capnp.Builder, input_path: [*:0]const u8) void {
     }
     defer c.g_object_unref(doc);
 
-    const iter_ptr = c.poppler_index_iter_new(doc);
-    if (iter_ptr == null) return;
-    defer c.poppler_index_iter_free(iter_ptr);
-
     // First pass: count entries (max 100)
     var entry_count: usize = 0;
     const max_entries: usize = 100;
-    countTocEntries(iter_ptr, &entry_count, max_entries, 0);
+    {
+        const iter_ptr = c.poppler_index_iter_new(doc) orelse return;
+        defer c.poppler_index_iter_free(iter_ptr);
+        countTocEntries(iter_ptr, &entry_count, max_entries, 0);
+    }
 
     if (entry_count == 0) return;
 
     // Re-create iterator for second pass
-    c.poppler_index_iter_free(iter_ptr);
-    const iter2 = c.poppler_index_iter_new(doc);
-    if (iter2 == null) return;
+    const iter2 = c.poppler_index_iter_new(doc) orelse return;
     defer c.poppler_index_iter_free(iter2);
 
     // Allocate composite list
@@ -563,8 +561,7 @@ fn countTocEntries(iter_ptr: *c.PopplerIndexIter, count: *usize, max: usize, dep
             defer c.poppler_action_free(action);
             if (action.*.any.title != null) count.* += 1;
         }
-        const child = c.poppler_index_iter_get_child(iter_ptr);
-        if (child != null) {
+        if (c.poppler_index_iter_get_child(iter_ptr)) |child| {
             countTocEntries(child, count, max, depth + 1);
             c.poppler_index_iter_free(child);
         }
@@ -586,8 +583,7 @@ fn writeTocEntries(list: *capnp.CompositeList, iter_ptr: *c.PopplerIndexIter, id
                 idx.* += 1;
             }
         }
-        const child = c.poppler_index_iter_get_child(iter_ptr);
-        if (child != null) {
+        if (c.poppler_index_iter_get_child(iter_ptr)) |child| {
             writeTocEntries(list, child, idx, max, depth + 1);
             c.poppler_index_iter_free(child);
         }
@@ -1326,4 +1322,50 @@ pub fn runStages(ctx: StageContext) void {
     b.writeMessage(file) catch |err| {
         std.log.err("Failed to write stages Cap'n Proto output: {s}", .{@errorName(err)});
     };
+}
+
+test "TOC extraction handles nested entries and absent outlines" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(path);
+    const pdf_path = try std.fmt.allocPrintSentinel(std.testing.allocator, "{s}/toc.pdf", .{path}, 0);
+    defer std.testing.allocator.free(pdf_path);
+
+    const fixture = @embedFile("testdata/toc.pdf");
+    var pdf: [fixture.len]u8 = fixture.*;
+    for ([_]bool{ true, false }) |has_outline| {
+        if (!has_outline) {
+            const ref = "/Outlines 4 0 R";
+            const offset = std.mem.indexOf(u8, &pdf, ref).?;
+            // Keep all xref offsets intact while removing the outline link.
+            @memset(pdf[offset .. offset + ref.len], ' ');
+        }
+        try tmp.dir.writeFile(.{ .sub_path = "toc.pdf", .data = &pdf });
+        var buf: [4096]u8 align(8) = undefined;
+        var builder = capnp.Builder.init(&buf);
+        builder.initRoot();
+        const list_start = builder.pos;
+        stageTocExtract(&builder, pdf_path);
+        const ptr_offset = builder.ptr_start + capnp.PTR_TOC_ENTRIES * 8;
+        const list_ptr = std.mem.readInt(u64, buf[ptr_offset..][0..8], .little);
+        if (!has_outline) {
+            try std.testing.expectEqual(@as(u64, 0), list_ptr);
+            try std.testing.expectEqual(list_start, builder.pos);
+            continue;
+        }
+        try std.testing.expect(list_ptr != 0);
+        const tag = std.mem.readInt(u64, buf[list_start..][0..8], .little);
+        try std.testing.expectEqual(@as(u32, 3), @as(u32, @truncate(tag)) >> 2);
+        const titles = [_][]const u8{ "Chapter", "Section", "Appendix" };
+        const depths = [_]u32{ 0, 1, 0 };
+        for (titles, depths, 0..) |title, depth, i| {
+            const elem = list_start + 8 + i * (capnp.TOC_DW + capnp.TOC_PW) * 8;
+            try std.testing.expectEqual(depth, std.mem.readInt(u32, buf[elem + capnp.TOC_OFF_DEPTH ..][0..4], .little));
+            const title_ptr_offset = elem + capnp.TOC_DW * 8;
+            const title_ptr = std.mem.readInt(u64, buf[title_ptr_offset..][0..8], .little);
+            const title_offset = title_ptr_offset + 8 + ((title_ptr >> 2) & 0x3fffffff) * 8;
+            try std.testing.expectEqualStrings(title, buf[title_offset .. title_offset + title.len]);
+        }
+    }
 }

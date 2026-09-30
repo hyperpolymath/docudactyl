@@ -356,7 +356,7 @@ export fn ddac_ml_set_model_dir(handle: ?*anyopaque, dir: [*:0]const u8) void {
 /// input_path: path to the document/image/audio file
 /// result_out: pointer to MlResult (56 bytes)
 /// Returns 0 on success (check result.status for stage-level status).
-export fn ddac_ml_run_stage(
+pub export fn ddac_ml_run_stage(
     handle: ?*anyopaque,
     stage: u8,
     input_path: [*:0]const u8,
