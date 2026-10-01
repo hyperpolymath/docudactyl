@@ -384,7 +384,7 @@ pub export fn ddac_gpu_ocr_submit(
 
 /// Flush any pending images in the queue — process them as a (partial) batch.
 /// Call this before collecting results if the queue isn't full.
-export fn ddac_gpu_ocr_flush(handle: ?*anyopaque) void {
+pub export fn ddac_gpu_ocr_flush(handle: ?*anyopaque) void {
     const ptr = handle orelse return;
     // SAFETY: ptr originates from ddac_gpu_ocr_init() which stores a *GpuOcrState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *GpuOcrState = @ptrCast(@alignCast(ptr));
@@ -395,7 +395,7 @@ export fn ddac_gpu_ocr_flush(handle: ?*anyopaque) void {
 }
 
 /// Get the number of results ready to collect after flush.
-export fn ddac_gpu_ocr_results_ready(handle: ?*anyopaque) u32 {
+pub export fn ddac_gpu_ocr_results_ready(handle: ?*anyopaque) u32 {
     const ptr = handle orelse return 0;
     // SAFETY: ptr originates from ddac_gpu_ocr_init() which stores a *GpuOcrState via @ptrCast; alignment is guaranteed by c_allocator
     const state: *GpuOcrState = @ptrCast(@alignCast(ptr));
@@ -405,7 +405,7 @@ export fn ddac_gpu_ocr_results_ready(handle: ?*anyopaque) u32 {
 /// Collect one OCR result by slot ID.
 /// result_out must point to an OcrResult (48 bytes).
 /// Returns 0 on success, -1 on invalid slot.
-export fn ddac_gpu_ocr_collect(
+pub export fn ddac_gpu_ocr_collect(
     handle: ?*anyopaque,
     slot_id: u32,
     result_out: *OcrResult,

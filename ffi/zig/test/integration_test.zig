@@ -247,8 +247,8 @@ test "prefetch hint and done with nonexistent file is safe" {
 test "cache init with temp dir" {
     var buf: [256]u8 = undefined;
     const tmpdir = std.fmt.bufPrintZ(&buf, "/tmp/ddac-test-{d}", .{std.time.milliTimestamp()}) catch return;
-    std.fs.makeDirAbsolute(std.mem.span(tmpdir)) catch return;
-    defer std.fs.deleteTreeAbsolute(std.mem.span(tmpdir)) catch {};
+    std.fs.makeDirAbsolute(tmpdir) catch return;
+    defer std.fs.deleteTreeAbsolute(tmpdir) catch {};
 
     const handle = ddac_cache_init(tmpdir, 64);
     if (handle) |h| {
@@ -266,8 +266,8 @@ test "cache free null is safe" {
 test "cache lookup on empty cache returns miss" {
     var buf: [256]u8 = undefined;
     const tmpdir = std.fmt.bufPrintZ(&buf, "/tmp/ddac-test-{d}", .{std.time.milliTimestamp()}) catch return;
-    std.fs.makeDirAbsolute(std.mem.span(tmpdir)) catch return;
-    defer std.fs.deleteTreeAbsolute(std.mem.span(tmpdir)) catch {};
+    std.fs.makeDirAbsolute(tmpdir) catch return;
+    defer std.fs.deleteTreeAbsolute(tmpdir) catch {};
 
     const handle = ddac_cache_init(tmpdir, 64) orelse return;
     defer ddac_cache_free(handle);
@@ -387,7 +387,7 @@ test "conduit process empty file returns empty validation" {
     const path = std.fmt.bufPrintZ(&path_buf, "/tmp/ddac-test-empty-{d}", .{std.time.milliTimestamp()}) catch return;
     const file = std.fs.createFileAbsoluteZ(path, .{}) catch return;
     file.close();
-    defer std.fs.deleteFileAbsolute(std.mem.span(path)) catch {};
+    defer std.fs.deleteFileAbsolute(path) catch {};
 
     var result_buf: [88]u8 align(8) = std.mem.zeroes([88]u8);
     const rc = ddac_conduit_process(path, @ptrCast(&result_buf));
