@@ -230,7 +230,7 @@ jobs:
 
       - name: Cache pinned Idris2 installation
         id: idris-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/idris2
           key: idris2-${{ runner.os }}-${{ runner.arch }}-0.8.0-15a3e4e70843f7a34100f6470c04b791330788df-v1
