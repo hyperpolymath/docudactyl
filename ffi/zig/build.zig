@@ -92,6 +92,31 @@ pub fn build(b: *std.Build) void {
     // Make `zig build test` run both unit and integration tests
     test_step.dependOn(&run_integ_tests.step);
 
+    // ── Docs ingest (no C libraries) ────────────────────────────────
+    // `zig build docs-ingest` builds only the standalone AsciiDoc/Markdown
+    // ingest binary; it needs none of the native parser libraries above.
+    const ingest_module = b.createModule(.{
+        .root_source_file = b.path("src/docs_ingest_cli.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const ingest_exe = b.addExecutable(.{
+        .name = "docs-ingest",
+        .root_module = ingest_module,
+    });
+    const ingest_step = b.step("docs-ingest", "Build the standalone docs-ingest binary");
+    ingest_step.dependOn(&b.addInstallArtifact(ingest_exe, .{}).step);
+
+    const ingest_test_module = b.createModule(.{
+        .root_source_file = b.path("src/docs_ingest.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_ingest_tests = b.addRunArtifact(b.addTest(.{ .root_module = ingest_test_module }));
+    const ingest_test_step = b.step("test-docs-ingest", "Run docs-ingest unit tests");
+    ingest_test_step.dependOn(&run_ingest_tests.step);
+    test_step.dependOn(&run_ingest_tests.step);
+
     // ── Documentation ───────────────────────────────────────────────
     const docs_module = b.createModule(.{
         .root_source_file = b.path("src/docudactyl_ffi.zig"),
