@@ -81,6 +81,7 @@ fn run(a: std.mem.Allocator) !u8 {
 
     var dir = std.fs.cwd().openDir(root.?, .{}) catch |e| return fail("cannot open --root: {s}", .{@errorName(e)});
     defer dir.close();
+    const root_real = dir.realpathAlloc(a, ".") catch |e| return fail("cannot resolve --root: {s}", .{@errorName(e)});
 
     var j: ing.Json = .{ .a = a };
     try j.raw("{\"schema\":\"reconcile-input/v0\",\"repo\":");
@@ -96,13 +97,22 @@ fn run(a: std.mem.Allocator) !u8 {
     var n: usize = 0;
     for (wanted) |p| {
         const fmt = ing.formatOf(p) orelse continue;
-        const bytes = dir.readFileAlloc(a, p, max_doc_bytes) catch |e| return fail("cannot read {s}: {s}", .{ p, @errorName(e) });
+        // Symlinks may not lead outside --root, and only regular files
+        // are read (a FIFO would block).
+        const real = dir.realpathAlloc(a, p) catch |e| return fail("cannot resolve {s}: {s}", .{ p, @errorName(e) });
+        if (!(real.len > root_real.len and std.mem.startsWith(u8, real, root_real) and real[root_real.len] == '/'))
+            return fail("{s} resolves outside --root", .{p});
+        const st = std.fs.cwd().statFile(real) catch |e| return fail("cannot stat {s}: {s}", .{ p, @errorName(e) });
+        if (st.kind != .file) return fail("{s} is not a regular file", .{p});
+        const bytes = std.fs.cwd().readFileAlloc(a, real, max_doc_bytes) catch |e| return fail("cannot read {s}: {s}", .{ p, @errorName(e) });
         const d = try ing.parse(a, p, bytes, fmt);
         if (n > 0) try j.raw(",");
         try j.doc(d, repo.?, rev.?);
         n += 1;
     }
     try j.raw("]}\n");
+    // JSON must be UTF-8; a document or file name with invalid bytes fails.
+    if (!std.unicode.utf8ValidateSlice(j.out.items)) return fail("input is not valid UTF-8", .{});
     try std.fs.File.stdout().writeAll(j.out.items);
     return 0;
 }

@@ -92,6 +92,9 @@ const Builder = struct {
     links: std.ArrayList(Link) = .empty,
     refs: std.ArrayList(Reference) = .empty,
     ids: std.StringHashMapUnmanaged(u32) = .empty,
+    /// Indexes into `links` of AsciiDoc natural cross references
+    /// (`<<Section Title>>`), the only targets matched against titles.
+    natural: std.ArrayList(usize) = .empty,
 
     fn span(line: u32, s: usize, e: usize) Span {
         return .{
@@ -108,14 +111,19 @@ const Builder = struct {
             gop.value_ptr.* = 0;
             return base;
         }
-        gop.value_ptr.* += 1;
-        const n = gop.value_ptr.*;
-        const id = switch (fmt) {
-            .asciidoc => try std.fmt.allocPrint(b.a, "{s}{s}{d}", .{ base, sep, n + 1 }),
-            .markdown => try std.fmt.allocPrint(b.a, "{s}-{d}", .{ base, n }),
-        };
-        try b.ids.put(b.a, id, 0);
-        return id;
+        // A generated id can collide with one already taken (headings
+        // "Setup", "Setup-1", "Setup"): keep counting until it is free.
+        while (true) {
+            gop.value_ptr.* += 1;
+            const n = gop.value_ptr.*;
+            const id = switch (fmt) {
+                .asciidoc => try std.fmt.allocPrint(b.a, "{s}{s}{d}", .{ base, sep, n + 1 }),
+                .markdown => try std.fmt.allocPrint(b.a, "{s}-{d}", .{ base, n }),
+            };
+            if (b.ids.contains(id)) continue;
+            try b.ids.put(b.a, id, 0);
+            return id;
+        }
     }
 
     fn claim(b: *Builder, id: []const u8) !void {
@@ -263,7 +271,7 @@ fn addRefs(b: *Builder, line: []const u8, lineno: u32, spans: []const [2]usize) 
     for (spans) |sp| {
         const raw = line[sp[0]..sp[1]];
         const kind = classifyCode(raw) orelse continue;
-        const lead = raw.len - std.mem.trimLeft(u8, raw, " ").len;
+        const lead = raw.len - std.mem.trimLeft(u8, raw, " \t").len;
         const v = std.mem.trim(u8, raw, " \t");
         try b.refs.append(b.a, .{ .kind = kind, .value = v, .span = Builder.span(lineno, sp[0] + lead, sp[0] + lead + v.len) });
     }
@@ -294,6 +302,8 @@ fn adocSubst(a: std.mem.Allocator, st: *const AdocState, s: []const u8) !?[]cons
         if (s[i] == '{') {
             if (std.mem.indexOfScalarPos(u8, s, i + 1, '}')) |e| {
                 if (st.attrs.get(s[i + 1 .. e])) |v| {
+                    // a value that still holds a reference was not resolvable
+                    if (std.mem.indexOfScalar(u8, v, '{') != null) return null;
                     try out.appendSlice(a, v);
                     i = e + 1;
                     continue;
@@ -419,6 +429,7 @@ fn adocAddTarget(b: *Builder, st: *const AdocState, raw: []const u8, text: ?[]co
             try b.links.append(b.a, .{ .kind = .internal_file, .target = t, .fragment = null, .text = text, .span = Builder.span(lineno, s, e) });
             return;
         }
+        try b.natural.append(b.a, b.links.items.len);
         try b.links.append(b.a, .{ .kind = .internal_anchor, .target = try std.fmt.allocPrint(b.a, "#{s}", .{t}), .fragment = null, .text = text, .span = Builder.span(lineno, s, e) });
         return;
     }
@@ -437,21 +448,37 @@ fn urlEnd(line: []const u8, start: usize) usize {
     return j;
 }
 
-fn bracketText(line: []const u8, open: usize) ?struct { text: []const u8, end: usize } {
-    // line[open] == '['; return text and index after ']'
-    var depth: usize = 0;
-    var j = open;
+/// Match square brackets in one pass. For each '[' the result holds the
+/// index just after its matching ']', or 0 when it has none. With `escapes`
+/// a backslash hides the next byte (Markdown `\]`).
+fn matchBrackets(a: std.mem.Allocator, line: []const u8, escapes: bool) ![]usize {
+    const out = try a.alloc(usize, line.len);
+    @memset(out, 0);
+    var stack: std.ArrayList(usize) = .empty;
+    var j: usize = 0;
     while (j < line.len) : (j += 1) {
-        if (line[j] == '[') depth += 1;
-        if (line[j] == ']') {
-            depth -= 1;
-            if (depth == 0) return .{ .text = line[open + 1 .. j], .end = j + 1 };
+        const c = line[j];
+        if (escapes and c == '\\') {
+            j += 1;
+            continue;
         }
+        if (c == '[') try stack.append(a, j);
+        if (c == ']') if (stack.pop()) |o| {
+            out[o] = j + 1;
+        };
     }
-    return null;
+    return out;
+}
+
+fn bracketText(line: []const u8, match: []const usize, open: usize) ?struct { text: []const u8, end: usize } {
+    // line[open] == '['; return text and index after ']'
+    const end = match[open];
+    if (end == 0) return null;
+    return .{ .text = line[open + 1 .. end - 1], .end = end };
 }
 
 fn adocLine(b: *Builder, st: *const AdocState, line: []const u8, m: []const u8, lineno: u32) !void {
+    const bm = try matchBrackets(b.a, line, false);
     var i: usize = 0;
     while (i < m.len) {
         const rest = m[i..];
@@ -496,7 +523,7 @@ fn adocLine(b: *Builder, st: *const AdocState, line: []const u8, m: []const u8, 
             const ob = std.mem.indexOfScalarPos(u8, m, ts, '[') orelse continue;
             const target = m[ts..ob];
             if (target.len == 0 or std.mem.indexOfAny(u8, target, " \t") != null) continue;
-            const bt = bracketText(line, ob) orelse continue;
+            const bt = bracketText(line, bm, ob) orelse continue;
             const text: ?[]const u8 = if (bt.text.len > 0) bt.text else null;
             switch (mac.kind) {
                 .include => {
@@ -512,12 +539,12 @@ fn adocLine(b: *Builder, st: *const AdocState, line: []const u8, m: []const u8, 
                     const sub = (try adocSubst(b.a, st, target)) orelse null;
                     if (sub) |t0| {
                         var t = t0;
-                        if (!isExternal(t) and t[0] != '/') {
+                        if (t.len > 0 and !isExternal(t) and t[0] != '/') {
                             if (st.attrs.get("imagesdir")) |dir| {
                                 if (dir.len > 0) t = try std.fmt.allocPrint(b.a, "{s}/{s}", .{ std.mem.trimRight(u8, dir, "/"), t });
                             }
                         }
-                        if (!isExternal(t) or isExternal(t0)) try adocAddTarget(b, st, t, text, lineno, i, bt.end, false);
+                        if (t.len > 0) try adocAddTarget(b, st, t, text, lineno, i, bt.end, false);
                     }
                 },
                 .xref => try adocAddTarget(b, st, target, text, lineno, i, bt.end, true),
@@ -540,7 +567,7 @@ fn adocLine(b: *Builder, st: *const AdocState, line: []const u8, m: []const u8, 
             var end = e;
             var text: ?[]const u8 = null;
             if (e < m.len and m[e] == '[') {
-                if (bracketText(line, e)) |bt| {
+                if (bracketText(line, bm, e)) |bt| {
                     text = if (bt.text.len > 0) bt.text else null;
                     end = bt.end;
                 }
@@ -560,11 +587,16 @@ fn parseAdoc(b: *Builder, lines: []const []const u8) !?[]const u8 {
     var block_len: usize = 0;
     var pending_id: ?[]const u8 = null;
     var code: std.ArrayList([2]usize) = .empty;
+    var prev_blank = true;
+    var in_literal = false;
 
     for (lines, 0..) |line, idx| {
         const lineno: u32 = @intCast(idx + 1);
         if (block) |d| {
-            if (isDelimiter(line) == d and (d == '`' or line.len == block_len)) block = null;
+            if (isDelimiter(line) == d and (d == '`' or line.len == block_len)) {
+                block = null;
+                prev_blank = true;
+            }
             continue;
         }
         if (isDelimiter(line)) |d| {
@@ -586,7 +618,8 @@ fn parseAdoc(b: *Builder, lines: []const []const u8) !?[]const u8 {
                     if (std.mem.eql(u8, nm[1..], "sectids")) st.sectids = false;
                     _ = st.attrs.remove(nm[1..]);
                 } else if (nm.len > 0) {
-                    try st.attrs.put(b.a, nm, val);
+                    // resolve references to attributes defined earlier
+                    try st.attrs.put(b.a, nm, (try adocSubst(b.a, &st, val)) orelse val);
                     if (std.mem.eql(u8, nm, "idprefix")) st.idprefix = val;
                     if (std.mem.eql(u8, nm, "idseparator")) st.idseparator = val;
                     if (std.mem.eql(u8, nm, "sectids")) st.sectids = true;
@@ -624,23 +657,38 @@ fn parseAdoc(b: *Builder, lines: []const []const u8) !?[]const u8 {
             try b.headings.append(b.a, .{ .level = h.level, .text = text, .id = id, .span = Builder.span(lineno, 0, line.len) });
             pending_id = null;
             try adocLine(b, &st, line, masked, lineno);
+            try addRefs(b, line, lineno, code.items);
+            prev_blank = true; // a section title leaves no paragraph open
             continue;
         }
-        if (std.mem.trim(u8, line, " \t").len > 0) pending_id = null;
+        const blank = std.mem.trim(u8, line, " \t").len == 0;
+        // A paragraph whose first line is indented is a literal block
+        // until the next blank line.
+        if (blank) {
+            in_literal = false;
+        } else if (prev_blank and (line[0] == ' ' or line[0] == '\t')) {
+            in_literal = true;
+        }
+        prev_blank = blank;
+        if (in_literal) continue;
+        if (!blank) pending_id = null;
         try adocLine(b, &st, line, masked, lineno);
         try addRefs(b, line, lineno, code.items);
     }
     // Natural cross references: <<Section Title>> points at the section
     // whose title matches exactly. Map those to the section's id.
-    for (b.links.items) |*l| {
-        if (l.kind != .internal_anchor) continue;
-        const want = l.target[1..];
-        if (b.ids.contains(want)) continue;
-        for (b.headings.items) |h| {
-            if (h.id != null and std.mem.eql(u8, h.text, want)) {
-                l.target = try std.fmt.allocPrint(b.a, "#{s}", .{h.id.?});
-                break;
-            }
+    // Explicit `link:#...` targets are never rewritten.
+    if (b.natural.items.len > 0) {
+        var by_title: std.StringHashMapUnmanaged([]const u8) = .empty;
+        for (b.headings.items) |h| if (h.id) |id| {
+            const gop = try by_title.getOrPut(b.a, h.text);
+            if (!gop.found_existing) gop.value_ptr.* = id;
+        };
+        for (b.natural.items) |k| {
+            const l = &b.links.items[k];
+            const want = l.target[1..];
+            if (b.ids.contains(want)) continue;
+            if (by_title.get(want)) |id| l.target = try std.fmt.allocPrint(b.a, "#{s}", .{id});
         }
     }
     return title;
@@ -666,11 +714,12 @@ pub fn mdSlug(a: std.mem.Allocator, text: []const u8) ![]const u8 {
 /// html are dropped, emphasis and code markers are removed.
 fn mdPlain(a: std.mem.Allocator, s: []const u8) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
+    const bm = try matchBrackets(a, s, true);
     var i: usize = 0;
     while (i < s.len) {
         const c = s[i];
         if (c == '!' and i + 1 < s.len and s[i + 1] == '[') {
-            if (bracketText(s, i + 1)) |bt| {
+            if (bracketText(s, bm, i + 1)) |bt| {
                 var e = bt.end;
                 if (e < s.len and s[e] == '(') e = (std.mem.indexOfScalarPos(u8, s, e, ')') orelse s.len - 1) + 1;
                 i = e;
@@ -678,7 +727,7 @@ fn mdPlain(a: std.mem.Allocator, s: []const u8) ![]const u8 {
             }
         }
         if (c == '[') {
-            if (bracketText(s, i)) |bt| {
+            if (bracketText(s, bm, i)) |bt| {
                 if (bt.end < s.len and s[bt.end] == '(') {
                     try out.appendSlice(a, try mdPlain(a, bt.text));
                     i = (std.mem.indexOfScalarPos(u8, s, bt.end, ')') orelse s.len - 1) + 1;
@@ -739,7 +788,8 @@ fn parenTarget(m: []const u8, open: usize) ?usize {
 
 fn htmlAttr(m: []const u8, at: usize, name: []const u8) ?struct { v: []const u8, s: usize, e: usize } {
     if (!std.mem.startsWith(u8, m[at..], name)) return null;
-    if (at > 0 and std.ascii.isAlphanumeric(m[at - 1])) return null;
+    // an attribute name starts after whitespace: `data-id=` is not `id=`
+    if (at == 0 or (m[at - 1] != ' ' and m[at - 1] != '\t')) return null;
     const q = at + name.len;
     if (q >= m.len or (m[q] != '"' and m[q] != '\'')) return null;
     const close = std.mem.indexOfScalarPos(u8, m, q + 1, m[q]) orelse return null;
@@ -748,6 +798,7 @@ fn htmlAttr(m: []const u8, at: usize, name: []const u8) ?struct { v: []const u8,
 
 fn mdLine(b: *Builder, line: []const u8, m: []const u8, lineno: u32) !void {
     var skips: std.ArrayList([2]usize) = .empty;
+    const bm = try matchBrackets(b.a, m, true);
     var i: usize = 0;
     outer: while (i < m.len) {
         for (skips.items) |r| if (i == r[0]) {
@@ -762,7 +813,7 @@ fn mdLine(b: *Builder, line: []const u8, m: []const u8, lineno: u32) !void {
         // [text](target) and ![alt](src)
         if (c == '[' or (c == '!' and i + 1 < m.len and m[i + 1] == '[')) {
             const ob = if (c == '!') i + 1 else i;
-            if (bracketText(m, ob)) |bt| {
+            if (bracketText(m, bm, ob)) |bt| {
                 if (bt.end < m.len and m[bt.end] == '(') {
                     if (parenTarget(m, bt.end)) |cp| {
                         const text: ?[]const u8 = if (bt.text.len > 0) line[ob + 1 .. bt.end - 1] else null;
@@ -877,7 +928,7 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
             if (mdFence(line)) |g| if (g.ch == f.ch and g.n >= f.n and std.mem.trim(u8, std.mem.trimLeft(u8, line, " ")[g.n..], " \t").len == 0) {
                 fence = null;
             };
-            prev_blank = false;
+            prev_blank = true; // no paragraph is open after a fenced block
             continue;
         }
         if (mdFence(line)) |f| {
@@ -922,7 +973,8 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
         if (mdAtx(work)) |h| {
             try mdHeading(b, h.level, h.text, lineno, line.len, &title);
             try mdLine(b, line, masked, lineno);
-            prev_blank = false;
+            try addRefs(b, line, lineno, code.items);
+            prev_blank = true; // a heading leaves no paragraph open
             continue;
         }
         // setext underline: applies to the previous non-blank line
@@ -938,7 +990,7 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
                     !std.mem.startsWith(u8, std.mem.trimLeft(u8, prev, " "), "|"))
                 {
                     try mdHeading(b, if (all_eq) 1 else 2, std.mem.trim(u8, prev, " \t"), lineno - 1, prev.len, &title);
-                    prev_blank = false;
+                    prev_blank = true;
                     continue;
                 }
             }
@@ -951,7 +1003,7 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
                 const tgt = std.mem.trim(u8, tl[k + 2 ..], " \t");
                 if (tgt.len > 0 and tl[1] != '^') {
                     try mdAddTarget(b, tgt, tl[1..k], lineno, off, work.len);
-                    prev_blank = false;
+                    prev_blank = true;
                     continue;
                 }
             }
@@ -1172,6 +1224,72 @@ test "asciidoc natural cross reference by section title" {
     );
     try tt.expectEqualStrings("#_getting_started", d.links[0].target);
     try tt.expectEqualStrings("#no such title", d.links[1].target);
+}
+
+test "review fixes: ids, refs, images, attributes, literals, xrefs" {
+    var arena = std.heap.ArenaAllocator.init(tt.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // generated suffix collides with an explicit heading
+    const md = try parseStr(a, "a.md",
+        \\# Setup
+        \\## Setup-1
+        \\## Setup
+        \\## `zig build` here
+        \\
+        \\```
+        \\x
+        \\```
+        \\    [hidden](guide.md)
+        \\
+        \\<a data-id="install"></a> [a \] b](guide2.md)
+    );
+    try tt.expectEqualStrings("setup", md.headings[0].id.?);
+    try tt.expectEqualStrings("setup-1", md.headings[1].id.?);
+    try tt.expectEqualStrings("setup-2", md.headings[2].id.?);
+    try tt.expectEqual(@as(usize, 1), md.references.len);
+    try tt.expectEqual(RefKind.command, md.references[0].kind);
+    const tab = try parseStr(a, "t.md", "ref `\tdocs/a/b.md`");
+    try tt.expectEqualStrings("docs/a/b.md", tab.references[0].value);
+    try tt.expectEqual(@as(u32, 7), tab.references[0].span.start.col);
+    try tt.expectEqual(@as(u32, 18), tab.references[0].span.end.col);
+    try tt.expectEqual(@as(usize, 0), md.anchors.len);
+    try tt.expectEqual(@as(usize, 1), md.links.len);
+    try tt.expectEqualStrings("guide2.md", md.links[0].target);
+
+    const ad = try parseStr(a, "b.adoc",
+        \\= T
+        \\:logo:
+        \\:imagesdir: https://cdn.example/assets
+        \\:base: docs
+        \\:parts: {base}/parts
+        \\:later: {undefined}/x
+        \\
+        \\image::{logo}[] image::logo.svg[] include::{parts}/intro.adoc[] include::{later}/y.adoc[]
+        \\
+        \\  link:literal.adoc[]
+        \\  still literal link:literal2.adoc[]
+        \\
+        \\== Overview
+        \\
+        \\<<Overview>> link:#Overview[x]
+    );
+    try tt.expectEqual(@as(usize, 4), ad.links.len);
+    try tt.expectEqual(LinkKind.external_url, ad.links[0].kind);
+    try tt.expectEqualStrings("https://cdn.example/assets/logo.svg", ad.links[0].target);
+    try tt.expectEqualStrings("docs/parts/intro.adoc", ad.links[1].target);
+    try tt.expectEqualStrings("#_overview", ad.links[2].target);
+    try tt.expectEqualStrings("#Overview", ad.links[3].target);
+}
+
+test "bracket matching stays linear on long unmatched lines" {
+    var arena = std.heap.ArenaAllocator.init(tt.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const line = try a.alloc(u8, 1 << 20);
+    @memset(line, '[');
+    const d = try parse(a, "c.md", line, .markdown);
+    try tt.expectEqual(@as(usize, 0), d.links.len);
 }
 
 test "asciidoc links, xrefs, includes and anchors" {

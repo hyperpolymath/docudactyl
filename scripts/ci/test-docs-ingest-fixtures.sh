@@ -19,6 +19,19 @@ set +e
 printf '../etc/passwd\n' > "$out/bad.txt"
 "$out/docs-ingest" --repo a/b --rev 0123456789abcdef0123456789abcdef01234567 \
   --root "$fx/repo" --files "$out/bad.txt" 2>/dev/null; r2=$?
+# A symlink that leads outside --root, and a document that is not UTF-8.
+mkdir -p "$out/esc/root"
+printf '# Private\n' > "$out/esc/private.md"
+ln -s ../private.md "$out/esc/root/README.md"
+printf 'README.md\n' > "$out/esc/files.txt"
+"$out/docs-ingest" --repo a/b --rev 0123456789abcdef0123456789abcdef01234567 \
+  --root "$out/esc/root" --files "$out/esc/files.txt" > /dev/null 2>&1; r3=$?
+mkdir -p "$out/utf/root"
+printf '# Caf\xe9\n' > "$out/utf/root/README.md"
+"$out/docs-ingest" --repo a/b --rev 0123456789abcdef0123456789abcdef01234567 \
+  --root "$out/utf/root" --files "$out/esc/files.txt" > /dev/null 2>&1; r4=$?
 set -e
-[ "$r1" = 2 ] && [ "$r2" = 2 ] || { echo "expected exit 2, got $r1 and $r2" >&2; exit 1; }
+for r in "$r1" "$r2" "$r3" "$r4"; do
+  [ "$r" = 2 ] || { echo "expected exit 2, got $r1 $r2 $r3 $r4" >&2; exit 1; }
+done
 echo "docs-ingest fixtures: OK"
