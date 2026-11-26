@@ -113,9 +113,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const run_ingest_tests = b.addRunArtifact(b.addTest(.{ .root_module = ingest_test_module }));
+    const run_ingest_cli_tests = b.addRunArtifact(b.addTest(.{ .root_module = ingest_module }));
     const ingest_test_step = b.step("test-docs-ingest", "Run docs-ingest unit tests");
     ingest_test_step.dependOn(&run_ingest_tests.step);
+    ingest_test_step.dependOn(&run_ingest_cli_tests.step);
     test_step.dependOn(&run_ingest_tests.step);
+    test_step.dependOn(&run_ingest_cli_tests.step);
 
     // ── Documentation ───────────────────────────────────────────────
     const docs_module = b.createModule(.{

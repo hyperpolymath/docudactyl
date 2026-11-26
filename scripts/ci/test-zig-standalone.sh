@@ -10,4 +10,5 @@ for module in capnp conduit dragonfly entity_graph evasion_detect \
 done
 # docs_ingest needs no libc at all.
 zig test ffi/zig/src/docs_ingest.zig
+zig test ffi/zig/src/docs_ingest_cli.zig
 bash scripts/ci/test-docs-ingest-fixtures.sh
