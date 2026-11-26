@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: MPL-2.0
+= Fixture repo
+:idprefix:
+:idseparator: -
+
+See <<Getting Started>>, <<install>>, xref:docs/guide.md#usage[the guide] and link:docs/missing.adoc[gone].
+Run `just build` and read `ffi/zig/src/docs_ingest.zig`.
+Pull `cgr.dev/chainguard/wolfi-base` and see `owner/repo`.
+
+== Getting Started
+
+[[install]]
+=== Install
+
+----
+<<not-a-link>> `inside/listing/block.zig`
+----

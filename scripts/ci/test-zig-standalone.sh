@@ -8,3 +8,6 @@ for module in capnp conduit dragonfly entity_graph evasion_detect \
   legal_ner ml_inference prefetch quality_stats speaker_id; do
   zig test "ffi/zig/src/$module.zig" -lc
 done
+# docs_ingest needs no libc at all.
+zig test ffi/zig/src/docs_ingest.zig
+bash scripts/ci/test-docs-ingest-fixtures.sh
