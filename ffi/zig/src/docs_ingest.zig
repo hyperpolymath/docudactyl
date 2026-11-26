@@ -907,6 +907,7 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
     var fence: ?struct { ch: u8, n: usize } = null;
     var in_comment = false;
     var prev_blank = true;
+    var para_open = false;
     var in_indented = false;
     var code: std.ArrayList([2]usize) = .empty;
     var start: usize = 0;
@@ -929,17 +930,23 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
                 fence = null;
             };
             prev_blank = true; // no paragraph is open after a fenced block
+            para_open = false;
             continue;
         }
-        if (mdFence(line)) |f| {
+        // a fence marker inside an open HTML comment is comment text
+        if (!in_comment) if (mdFence(line)) |f| {
             fence = .{ .ch = f.ch, .n = f.n };
+            para_open = false;
             continue;
-        }
+        };
         // HTML comments, possibly spanning lines
         var work = line;
         var masked_comment: ?[]u8 = null;
         if (in_comment or std.mem.indexOf(u8, line, "<!--") != null) {
             const mc = try b.a.dupe(u8, line);
+            // `<!--` inside a code span is code, not a comment opener
+            var spans: std.ArrayList([2]usize) = .empty;
+            _ = try maskCode(b.a, line, &spans);
             var j: usize = 0;
             while (j < mc.len) {
                 if (in_comment) {
@@ -952,6 +959,14 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
                         break;
                     }
                 } else if (std.mem.indexOfPos(u8, line, j, "<!--")) |s| {
+                    var in_code = false;
+                    for (spans.items) |sp| if (s >= sp[0] and s < sp[1]) {
+                        in_code = true;
+                    };
+                    if (in_code) {
+                        j = s + 4;
+                        continue;
+                    }
                     j = s;
                     in_comment = true;
                 } else break;
@@ -964,6 +979,7 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
         if (indented and !blank and (prev_blank or in_indented)) {
             in_indented = true;
             prev_blank = false;
+            para_open = false;
             continue;
         }
         if (!blank) in_indented = false;
@@ -975,10 +991,11 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
             try mdLine(b, line, masked, lineno);
             try addRefs(b, line, lineno, code.items);
             prev_blank = true; // a heading leaves no paragraph open
+            para_open = false;
             continue;
         }
-        // setext underline: applies to the previous non-blank line
-        if (!prev_blank and idx > start and !blank) {
+        // setext underline: only a paragraph line above can be the title
+        if (para_open and idx > start and !blank) {
             const t = std.mem.trim(u8, work, " \t");
             const all_eq = t.len > 0 and std.mem.allEqual(u8, t, '=');
             const all_dash = t.len >= 2 and std.mem.allEqual(u8, t, '-');
@@ -991,6 +1008,7 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
                 {
                     try mdHeading(b, if (all_eq) 1 else 2, std.mem.trim(u8, prev, " \t"), lineno - 1, prev.len, &title);
                     prev_blank = true;
+                    para_open = false;
                     continue;
                 }
             }
@@ -1004,6 +1022,7 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
                 if (tgt.len > 0 and tl[1] != '^') {
                     try mdAddTarget(b, tgt, tl[1..k], lineno, off, work.len);
                     prev_blank = true;
+                    para_open = false;
                     continue;
                 }
             }
@@ -1011,13 +1030,15 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
         try mdLine(b, line, masked, lineno);
         try addRefs(b, line, lineno, code.items);
         prev_blank = blank;
+        para_open = std.mem.trim(u8, work, " \t").len > 0;
     }
     return title;
 }
 
 // ── Entry point ─────────────────────────────────────────────────────────
 
-/// Parse one prose file. The arena owns every slice in the result.
+/// Parse one prose file. The result borrows `path` and `bytes`: both must
+/// outlive the returned Doc. Every other slice is owned by `arena`.
 pub fn parse(arena: std.mem.Allocator, path: []const u8, bytes: []const u8, format: Format) Error!Doc {
     var digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(bytes, &digest, .{});
@@ -1280,6 +1301,36 @@ test "review fixes: ids, refs, images, attributes, literals, xrefs" {
     try tt.expectEqualStrings("docs/parts/intro.adoc", ad.links[1].target);
     try tt.expectEqualStrings("#_overview", ad.links[2].target);
     try tt.expectEqualStrings("#Overview", ad.links[3].target);
+}
+
+test "review fixes: markdown comments, fences and setext" {
+    var arena = std.heap.ArenaAllocator.init(tt.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const d = try parseStr(a, "e.md",
+        \\<!--
+        \\```
+        \\-->
+        \\## After comment
+        \\
+        \\Use `<!--` in code, then [link](x.md).
+        \\
+        \\~~~
+        \\code
+        \\~~~
+        \\---
+        \\
+        \\    indented code
+        \\---
+        \\
+        \\Guide
+        \\---
+    );
+    try tt.expectEqual(@as(usize, 2), d.headings.len);
+    try tt.expectEqualStrings("After comment", d.headings[0].text);
+    try tt.expectEqualStrings("Guide", d.headings[1].text);
+    try tt.expectEqual(@as(usize, 1), d.links.len);
+    try tt.expectEqualStrings("x.md", d.links[0].target);
 }
 
 test "bracket matching stays linear on long unmatched lines" {
