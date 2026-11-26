@@ -39,6 +39,38 @@ fn readList(a: std.mem.Allocator, path: []const u8) ![]const []const u8 {
     return out.items;
 }
 
+/// True when `real` names a path strictly inside the directory `root`.
+/// Both are absolute, resolved paths. A root of "/" contains every path.
+fn under(root: []const u8, real: []const u8) bool {
+    if (std.mem.eql(u8, root, "/")) return real.len > 1 and real[0] == '/';
+    return real.len > root.len and std.mem.startsWith(u8, real, root) and real[root.len] == '/';
+}
+
+/// Open `p` relative to `dir`, then check the file that was actually
+/// opened: it must be a regular file whose resolved path lies under
+/// `root_real`. Checking the open descriptor, not the name, closes the
+/// window where a file or parent directory is swapped between the check
+/// and the read. The open is non-blocking so a FIFO cannot hang it.
+fn readBeneath(a: std.mem.Allocator, dir: std.fs.Dir, root_real: []const u8, p: []const u8) ![]u8 {
+    const fd = try std.posix.openat(dir.fd, p, .{ .ACCMODE = .RDONLY, .NONBLOCK = true, .CLOEXEC = true }, 0);
+    const file: std.fs.File = .{ .handle = fd };
+    defer file.close();
+    const st = try std.posix.fstat(fd);
+    if (!std.posix.S.ISREG(st.mode)) return error.NotRegularFile;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const real = try std.os.getFdPath(fd, &buf);
+    if (!under(root_real, real)) return error.OutsideRoot;
+    return file.readToEndAlloc(a, max_doc_bytes);
+}
+
+test "under handles a root of slash and sibling prefixes" {
+    try std.testing.expect(under("/", "/a.md"));
+    try std.testing.expect(!under("/", "/"));
+    try std.testing.expect(under("/r", "/r/a.md"));
+    try std.testing.expect(!under("/r", "/rx/a.md"));
+    try std.testing.expect(!under("/r", "/r"));
+}
+
 pub fn main() u8 {
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_state.deinit();
@@ -97,14 +129,11 @@ fn run(a: std.mem.Allocator) !u8 {
     var n: usize = 0;
     for (wanted) |p| {
         const fmt = ing.formatOf(p) orelse continue;
-        // Symlinks may not lead outside --root, and only regular files
-        // are read (a FIFO would block).
-        const real = dir.realpathAlloc(a, p) catch |e| return fail("cannot resolve {s}: {s}", .{ p, @errorName(e) });
-        if (!(real.len > root_real.len and std.mem.startsWith(u8, real, root_real) and real[root_real.len] == '/'))
-            return fail("{s} resolves outside --root", .{p});
-        const st = std.fs.cwd().statFile(real) catch |e| return fail("cannot stat {s}: {s}", .{ p, @errorName(e) });
-        if (st.kind != .file) return fail("{s} is not a regular file", .{p});
-        const bytes = std.fs.cwd().readFileAlloc(a, real, max_doc_bytes) catch |e| return fail("cannot read {s}: {s}", .{ p, @errorName(e) });
+        const bytes = readBeneath(a, dir, root_real, p) catch |e| switch (e) {
+            error.OutsideRoot => return fail("{s} resolves outside --root", .{p}),
+            error.NotRegularFile => return fail("{s} is not a regular file", .{p}),
+            else => return fail("cannot read {s}: {s}", .{ p, @errorName(e) }),
+        };
         const d = try ing.parse(a, p, bytes, fmt);
         if (n > 0) try j.raw(",");
         try j.doc(d, repo.?, rev.?);

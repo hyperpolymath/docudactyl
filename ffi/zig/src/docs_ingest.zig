@@ -229,6 +229,24 @@ pub fn classifyCode(v: []const u8) ?RefKind {
     return .path;
 }
 
+/// Given a backtick run at `i`, return the offset just past the matching
+/// closing run of the same length, or just past the opening run if the
+/// span is never closed on this line.
+fn codeSpanEnd(line: []const u8, i: usize) usize {
+    var n: usize = 0;
+    while (i + n < line.len and line[i + n] == '`') n += 1;
+    var j = i + n;
+    while (j < line.len) {
+        if (line[j] == '`') {
+            var m: usize = 0;
+            while (j + m < line.len and line[j + m] == '`') m += 1;
+            if (m == n) return j + m;
+            j += m;
+        } else j += 1;
+    }
+    return i + n;
+}
+
 /// Mask inline code spans with spaces, keeping columns. Returns the masked
 /// line and the code spans found, as (start, end) byte offsets of content.
 fn maskCode(a: std.mem.Allocator, line: []const u8, spans: *std.ArrayList([2]usize)) ![]u8 {
@@ -944,9 +962,9 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
         var masked_comment: ?[]u8 = null;
         if (in_comment or std.mem.indexOf(u8, line, "<!--") != null) {
             const mc = try b.a.dupe(u8, line);
-            // `<!--` inside a code span is code, not a comment opener
-            var spans: std.ArrayList([2]usize) = .empty;
-            _ = try maskCode(b.a, line, &spans);
+            // One scan in source order: whichever of a code span or a
+            // comment starts first wins, and backticks inside a comment
+            // are comment text.
             var j: usize = 0;
             while (j < mc.len) {
                 if (in_comment) {
@@ -958,18 +976,11 @@ fn parseMd(b: *Builder, lines: []const []const u8) !?[]const u8 {
                         @memset(mc[j..], ' ');
                         break;
                     }
-                } else if (std.mem.indexOfPos(u8, line, j, "<!--")) |s| {
-                    var in_code = false;
-                    for (spans.items) |sp| if (s >= sp[0] and s < sp[1]) {
-                        in_code = true;
-                    };
-                    if (in_code) {
-                        j = s + 4;
-                        continue;
-                    }
-                    j = s;
+                } else if (line[j] == '`') {
+                    j = codeSpanEnd(line, j);
+                } else if (std.mem.startsWith(u8, line[j..], "<!--")) {
                     in_comment = true;
-                } else break;
+                } else j += 1;
             }
             masked_comment = mc;
             work = mc;
@@ -1331,6 +1342,20 @@ test "review fixes: markdown comments, fences and setext" {
     try tt.expectEqualStrings("Guide", d.headings[1].text);
     try tt.expectEqual(@as(usize, 1), d.links.len);
     try tt.expectEqualStrings("x.md", d.links[0].target);
+}
+
+test "markdown comments and code spans are scanned in source order" {
+    var arena = std.heap.ArenaAllocator.init(tt.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const d = try parseStr(a, "f.md",
+        \\<!-- ` --> <!-- [hidden](hidden.md) `
+        \\[also hidden](also.md)
+        \\-->
+        \\Shown `<!--` then [seen](seen.md).
+    );
+    try tt.expectEqual(@as(usize, 1), d.links.len);
+    try tt.expectEqualStrings("seen.md", d.links[0].target);
 }
 
 test "bracket matching stays linear on long unmatched lines" {
