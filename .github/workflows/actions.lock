@@ -12,11 +12,11 @@ workflows:
         - 'haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d'
     '.github/workflows/codeql.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
-        - 'github/codeql-action@33d7b85da1a04171e211befe2c739303b9a4c066'
+        - 'github/codeql-action@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea'
     '.github/workflows/dogfood-gate.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
         - 'hyperpolymath/deed-ecosystem@4cb8886be67cf0d67e150679d1213ea519c3806f'
-        - 'hyperpolymath/k9-ecosystem@20f6be5b5a14a48680b236955b5c4ad9033d00d4'
+        - 'hyperpolymath/k9-ecosystem@bf7f5d53f6c3ce6258453e7f502b444b9fad7987'
     '.github/workflows/hpc-ci.yml':
         - 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
@@ -72,9 +72,9 @@ dependencies:
         repo_id: 496012378
         uses:
             - 'actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f'
-    'github/codeql-action@33d7b85da1a04171e211befe2c739303b9a4c066':
-        ref: 'v4.39.3'
-        commit: 'sha1-33d7b85da1a04171e211befe2c739303b9a4c066'
+    'github/codeql-action@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea':
+        ref: 'v4.39.4'
+        commit: 'sha1-1bd86f2fdb4b86187fa4059f16f31a3202acc9ea'
         owner_id: 9919
         repo_id: 259445878
     'haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d':
@@ -87,9 +87,9 @@ dependencies:
         commit: 'sha1-4cb8886be67cf0d67e150679d1213ea519c3806f'
         owner_id: 6759885
         repo_id: 1275649586
-    'hyperpolymath/k9-ecosystem@20f6be5b5a14a48680b236955b5c4ad9033d00d4':
+    'hyperpolymath/k9-ecosystem@bf7f5d53f6c3ce6258453e7f502b444b9fad7987':
         ref: 'main'
-        commit: 'sha1-20f6be5b5a14a48680b236955b5c4ad9033d00d4'
+        commit: 'sha1-bf7f5d53f6c3ce6258453e7f502b444b9fad7987'
         owner_id: 6759885
         repo_id: 1275650185
     'hyperpolymath/smtp-notify-action@e384daf6167a7a7567642d6a62060106244d2413':
